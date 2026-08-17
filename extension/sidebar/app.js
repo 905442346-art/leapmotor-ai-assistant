@@ -4220,9 +4220,9 @@ async function checkForUpdates(silent = false) {
  * 从GitHub Releases API获取最新版本
  */
 async function fetchLatestReleaseFromGitHub() {
-  // 默认使用零跑的仓库（需要替换为实际仓库）
-  const owner = 'leapmotor'; // 替换为实际的组织名
-  const repo = 'leapmotor-ai-assistant'; // 替换为实际的仓库名
+  // GitHub仓库配置（已发布到GitHub）
+  const owner = '905442346-art';
+  const repo = 'leapmotor-ai-assistant';
 
   const url = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
 
