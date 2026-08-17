@@ -1985,6 +1985,14 @@ ${LEP_SYSTEMS}
 用户询问的是零跑汽车内部系统的操作、流程、政策、规定。
 包括：OA审批、报销流程、人事制度、企业微信使用、IT支持等公司内部事务。
 
+### 1.1 oa_process (OA流程查询) - system的子类
+用户明确询问要发起什么流程、某个事项走什么流程、如何申请某项业务等。
+特征词："发起什么流程"、"走什么流程"、"怎么申请"、"请什么假"、"报销"、"审批"、"流程"、"请假"、"加班"、"出差"、"采购"、"用印"、"印章"、"合同"
+示例：
+- "我想请病假该走什么流程" → {"type": "oa_process"}
+- "报销需要走什么流程" → {"type": "oa_process"}
+- "怎么发起采购流程" → {"type": "oa_process"}
+
 ### 2. page_analysis (页面分析)
 用户明确要求分析、总结、提取当前网页的内容或数据。
 特征：包含"页面"、"网页"、"总结"、"分析"、"提取"、"表格"、"截图"等与当前浏览页面相关的指令。
@@ -2090,7 +2098,15 @@ function getTypeLabel(type) {
 function detectIntentThreeWay(userMessage) {
   const msg = userMessage.toLowerCase();
 
-  // 系统问题关键词
+  // OA流程查询关键词（优先级最高）
+  const oaProcessKeywords = [
+    '发起什么流程', '走什么流程', '什么流程', '怎么申请', '如何申请',
+    '请什么假', '怎么请假', '病假流程', '事假流程', '年假流程',
+    '报销流程', '出差流程', '加班流程', '采购流程', '用印流程',
+    '印章流程', '合同流程', '审批流程', '发起流程', '要找谁审批'
+  ];
+
+  // 系统问题关键词（一般性）
   const systemKeywords = [
     '报销', '发票', '出差', '差旅', '费用', '预算',
     '实习生', '劳务派遣', '入职', '离职', '转正', '薪资', '福利',
@@ -2104,14 +2120,20 @@ function detectIntentThreeWay(userMessage) {
     '分析这个页面', '分析当前页面', '提取页面', '抓取页面'
   ];
 
+  let oaProcessScore = 0;
   let systemScore = 0;
   let analysisScore = 0;
 
+  oaProcessKeywords.forEach(kw => { if (msg.includes(kw)) oaProcessScore += 3; });
   systemKeywords.forEach(kw => { if (msg.includes(kw)) systemScore += 2; });
   analysisKeywords.forEach(kw => { if (msg.includes(kw)) analysisScore += 5; });
 
+  // 优先级：页面分析 > OA流程 > 系统问题 > 通用问答
   if (analysisScore > 0) {
     return { type: 'page_analysis', confidence: 0.8, reason: '检测到页面分析指令' };
+  }
+  if (oaProcessScore >= 3) {
+    return { type: 'oa_process', confidence: 0.85, reason: `检测到${oaProcessScore}分OA流程查询特征` };
   }
   if (systemScore >= 2) {
     return { type: 'system', confidence: 0.7, reason: `检测到${systemScore}分系统问题特征` };
@@ -2121,12 +2143,131 @@ function detectIntentThreeWay(userMessage) {
 }
 
 /**
+ * 处理OA流程查询 - 自动调用OA接口获取流程列表，然后AI基于流程列表回答用户问题
+ */
+async function handleOAProcessQuery(userMessage) {
+  setStatus('正在查询可发起的OA流程...', 'loading');
+
+  // 检查员工工号是否配置
+  if (!employeeId) {
+    return {
+      text: '⚠️ **未配置员工工号**\n\n要查询OA流程，请先在 **设置 → 知识库** 中填写您的员工工号。\n\n配置后即可自动查询所有可发起的审批流程。',
+      source: 'oa_process_error',
+      usedFastGPT: false,
+      routeType: 'oa_process'
+    };
+  }
+
+  try {
+    // 调用OA接口获取流程列表
+    const processList = await fetchOAProcessViaProxy(employeeId);
+
+    if (!processList || processList.length === 0) {
+      return {
+        text: '📋 **暂无可发起的OA流程**\n\n当前账号可能没有待办流程或权限不足。如需帮助，请咨询人事部门。',
+        source: 'oa_process_empty',
+        usedFastGPT: false,
+        routeType: 'oa_process'
+      };
+    }
+
+    console.log(`[OA流程查询] ✅ 成功获取 ${processList.length} 个流程`);
+
+    // 将流程列表格式化为文本（供AI参考）
+    const processText = processList.map((item, index) => {
+      const name = item.name || item.processName || '未知流程';
+      const desc = item.desc || item.description || item.remark || '';
+      return `${index + 1}. **${name}${desc ? ' - ' + desc : ''}**`;
+    }).join('\n');
+
+    // 构建AI提示词
+    const systemPrompt = `你是零跑汽车公司的流程咨询助手。根据以下可发起的OA流程列表，回答用户的问题。
+
+## 可发起的流程列表：
+${processText}
+
+## 回答要求：
+1. 根据用户的问题，从流程列表中找到最匹配的流程
+2. 告诉用户具体要走哪个流程
+3. 如果有多个相关流程，都列出来让用户选择
+4. 用简洁友好的语言回答
+5. 如果找不到匹配的流程，建议用户联系相关部门`;
+
+    // 调用AI生成回答
+    setStatus('正在分析匹配的流程...', 'loading');
+    const aiAnswer = await callMainModelWithContext(userMessage, null, systemPrompt);
+
+    if (!aiAnswer) {
+      // AI回答失败，直接显示流程列表
+      return {
+        text: `📋 **为您找到 ${processList.length} 个可发起的流程：**\n\n${processText}\n\n💡 您可以点击侧边栏的 📋 按钮查看完整列表`,
+        source: 'oa_process_list',
+        sources: [{ title: `OA流程列表 (${processList.length}个)` }],
+        usedFastGPT: false,
+        routeType: 'oa_process'
+      };
+    }
+
+    return {
+      text: aiAnswer,
+      source: 'oa_process_ai',
+      sources: [{ title: `OA流程智能推荐` }],
+      usedFastGPT: false,
+      routeType: 'oa_process'
+    };
+
+  } catch (error) {
+    console.error('[OA流程查询] ❌ 查询失败:', error);
+    return {
+      text: `⚠️ **OA流程查询失败**\n\n错误信息：${error.message}\n\n请检查：\n1. 网络连接是否正常\n2. 员工工号是否正确\n3. 是否在公司内网环境\n\n您也可以点击侧边栏 📋 按钮手动查看流程列表。`,
+      source: 'oa_process_error',
+      usedFastGPT: false,
+      routeType: 'oa_process'
+    };
+  }
+}
+
+/**
+ * 使用自定义system prompt调用主AI模型
+ */
+async function callMainModelWithContext(userMessage, contextContent, customSystemPrompt) {
+  if (!settings.apiUrl || !settings.apiKey || !settings.modelName) {
+    throw new Error('主AI模型未配置');
+  }
+
+  const response = await fetch(`${settings.apiUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.apiKey}`
+    },
+    body: JSON.stringify({
+      model: settings.modelName,
+      messages: [
+        { role: 'system', content: customSystemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      stream: false,  // OA流程查询使用非流式，确保完整性
+      temperature: 0.7
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`API调用失败: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || null;
+}
+
+/**
  * 三路智能路由 - 根据问题类型分发到不同的处理逻辑
  *
  * 路由规则：
- * 1. system (系统问题)       → 调用FastGPT工作流（零跑内部知识库）
- * 2. page_analysis (页面分析) → 调用主AI模型 + 传入当前页面内容
- * 3. general_chat (通用问答)   → 调用主AI模型 + 不传页面内容（联网查询）
+ * 0. oa_process (OA流程查询)  → 调用OA接口 + AI智能匹配
+ * 1. system (系统问题)         → 调用FastGPT工作流（零跑内部知识库）
+ * 2. page_analysis (页面分析)   → 调用主AI模型 + 传入当前页面内容
+ * 3. general_chat (通用问答)     → 调用主AI模型 + 不传页面内容（联网查询）
  */
 async function processMessageWithFastGPT(userMessage, contextContent) {
   // 如果FastGPT未启用（用户手动禁用），直接使用主模型
@@ -2151,6 +2292,11 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
 
   // ========== 第二步：根据类型分发 ==========
   switch (intent.type) {
+
+    // ====== 路由0：OA流程查询 → 调用OA接口 + AI回答 ======
+    case 'oa_process':
+      console.log('[三路路由] 📋 路由到【OA流程查询】 → 自动调用OA接口');
+      return await handleOAProcessQuery(userMessage);
 
     // ====== 路由1：系统问题 → FastGPT知识库 ======
     case 'system':
