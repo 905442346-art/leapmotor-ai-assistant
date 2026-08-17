@@ -2792,6 +2792,10 @@ body {
   animation: modalFadeIn 0.2s ease;
 }
 
+.update-modal.hidden {
+  display: none;
+}
+
 .update-overlay {
   position: absolute;
   top: 0;
