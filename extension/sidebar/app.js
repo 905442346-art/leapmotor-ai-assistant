@@ -2758,6 +2758,50 @@ async function sendMessage() {
   // 获取页面内容
   if (activePageId === 'current') {
 
+    // 主动抓取当前页面内容（如果没有预先抓取）
+    const currentPageInCaptured = capturedPages.find(p => p.id === activePageId || p.id?.startsWith('page_'));
+
+    if (!currentPageInCaptured) {
+      console.log('[sendMessage] 📡 正在主动抓取当前页面内容...');
+      addThinkingStep('fetch', '正在抓取当前浏览器标签页内容...');
+
+      try {
+        const pageContent = await new Promise((resolve) => {
+          window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
+
+          const timeoutId = setTimeout(() => {
+            console.warn('[sendMessage] ⏰ 页面内容获取超时(3秒)');
+            window.removeEventListener('message', handler);
+            resolve(null);
+          }, 3000);
+
+          const handler = (event) => {
+            if (event.data.type === 'PAGE_CONTENT' && event.data.content) {
+              clearTimeout(timeoutId);
+              window.removeEventListener('message', handler);
+              resolve(event.data.content);
+            }
+          };
+
+          window.addEventListener('message', handler);
+        });
+
+        if (pageContent) {
+          contextContent = formatPageContent(pageContent);
+          updateCurrentPageInfo({ title: pageContent.title });
+          messageText += `\n\n[已自动抓取当前页面]`;
+          console.log('[sendMessage] ✅ 当前页面内容抓取成功:', pageContent.title);
+          addThinkingStep('success', `✅ 成功抓取页面: ${pageContent.title}`);
+        } else {
+          console.warn('[sendMessage] ⚠️ 当前页面内容为空');
+          addThinkingStep('detect', '⚠️ 无法获取当前页面内容');
+        }
+      } catch (error) {
+        console.error('[sendMessage] ❌ 抓取页面失败:', error);
+        addThinkingStep('error', `页面抓取失败: ${error.message}`);
+      }
+    }
+
   if (capturedPages.length > 0) {
     const allContent = capturedPages.map((c, i) =>
       `\n========== 页面 ${i + 1}: ${c.title} ==========\nURL: ${c.url}\n${formatPageContent(c.content)}`
