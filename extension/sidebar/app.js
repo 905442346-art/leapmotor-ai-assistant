@@ -2100,22 +2100,24 @@ function detectIntentThreeWay(userMessage) {
 
   // OA流程查询关键词（优先级最高） - 支持多种表达方式
   const oaProcessKeywords = [
-    // 完整短语匹配
+    // 完整短语匹配（高优先级 +5分）
     '发起什么流程', '走什么流程', '什么流程', '走哪个流程', '走哪',
+    '哪个流程', '要用哪个', '该走哪个', '应该走哪个',
     '怎么申请', '如何申请', '申请流程',
     '请什么假', '怎么请假', '病假流程', '事假流程', '年假流程',
     '报销流程', '出差流程', '加班流程', '采购流程', '用印流程',
     '印章流程', '合同流程', '审批流程', '发起流程', '要找谁审批',
 
-    // 核心词汇（单独出现也触发）
+    // 核心词汇（中优先级 +3分）
     '流程', '发起', '走流程', '走审批', '要申请', '想申请',
-    '需要申请', '应该走', '该走', '要走',
+    '需要申请', '应该走', '该走', '要走', '用印', '用章',
+    '盖章', '请假', '报销', '出差', '采购', '印章',
 
-    // 常见业务场景
+    // 常见业务场景（场景匹配 +4分）
     '新电脑', '新手机', '办公用品', '资产申请', 'IT设备',
     '门禁卡', '工牌', '名片', '用车', '会议室', '访客',
     '加班费', '差旅费', '招待费', '培训', '转正', '离职',
-    '调薪', '晋升', '社保', '公积金'
+    '调薪', '晋升', '社保', '公积金', '名片', '工装'
   ];
 
   // 系统问题关键词（一般性） - 排除OA流程相关词汇
@@ -2139,7 +2141,20 @@ function detectIntentThreeWay(userMessage) {
   let systemScore = 0;
   let analysisScore = 0;
 
-  oaProcessKeywords.forEach(kw => { if (msg.includes(kw)) oaProcessScore += 3; });
+  // OA流程关键词 - 差异化评分
+  // 完整短语（前17个）: +5分
+  for (let i = 0; i < 17; i++) {
+    if (msg.includes(oaProcessKeywords[i])) oaProcessScore += 5;
+  }
+  // 核心词汇（中间16个）: +3分
+  for (let i = 17; i < 33; i++) {
+    if (msg.includes(oaProcessKeywords[i])) oaProcessScore += 3;
+  }
+  // 业务场景（后18个）: +4分
+  for (let i = 33; i < oaProcessKeywords.length; i++) {
+    if (msg.includes(oaProcessKeywords[i])) oaProcessScore += 4;
+  }
+
   systemKeywords.forEach(kw => { if (msg.includes(kw)) systemScore += 2; });
   analysisKeywords.forEach(kw => { if (msg.includes(kw)) analysisScore += 5; });
 
