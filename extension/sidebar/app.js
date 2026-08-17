@@ -2151,7 +2151,7 @@ async function handleOAProcessQuery(userMessage) {
   // 检查员工工号是否配置
   if (!employeeId) {
     return {
-      text: '⚠️ **未配置员工工号**\n\n要查询OA流程，请先在 **设置 → 知识库** 中填写您的员工工号。\n\n配置后即可自动查询所有可发起的审批流程。',
+      text: '⚠️ **未配置员工工号**\n\n要自动查询OA流程，请先在 **设置 → 基础配置** 中填写您的员工工号。\n\n配置后即可在提问时自动匹配相关流程。',
       source: 'oa_process_error',
       usedFastGPT: false,
       routeType: 'oa_process'
@@ -2159,12 +2159,29 @@ async function handleOAProcessQuery(userMessage) {
   }
 
   try {
-    // 调用OA接口获取流程列表
-    const processList = await fetchOAProcessViaProxy(employeeId);
+    // 调用OA接口获取流程列表（使用正确的API地址）
+    const apiUrl = `https://lppms.leapmotor.com/pmapi/ufOAWorkFlow/collectOAProcess?number=${employeeId}`;
+    console.log(`[OA流程查询] 📡 正在调用接口: ${apiUrl}`);
 
-    if (!processList || processList.length === 0) {
+    let processList;
+    try {
+      // 尝试直连调用
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      processList = data.data || data;
+      console.log(`[OA流程查询] ✅ 直连成功，获取到数据`);
+    } catch (directError) {
+      console.log(`[OA流程查询] ⚠️ 直连失败，尝试代理模式:`, directError.message);
+      // 直连失败，尝试通过background.js代理调用
+      processList = await fetchOAProcessViaProxy(employeeId);
+    }
+
+    if (!processList || !Array.isArray(processList) || processList.length === 0) {
       return {
-        text: '📋 **暂无可发起的OA流程**\n\n当前账号可能没有待办流程或权限不足。如需帮助，请咨询人事部门。',
+        text: '📋 **暂无可发起的OA流程**\n\n当前账号可能没有待办流程或权限不足。如需帮助，请咨询人事部门或IT支持。',
         source: 'oa_process_empty',
         usedFastGPT: false,
         routeType: 'oa_process'
@@ -2173,36 +2190,61 @@ async function handleOAProcessQuery(userMessage) {
 
     console.log(`[OA流程查询] ✅ 成功获取 ${processList.length} 个流程`);
 
-    // 将流程列表格式化为文本（供AI参考）
+    // 使用正确的字段映射（根据真实API返回）
+    // typeName: 流程类型, workflowName: 流程名称, workflowDesc: 流程描述
     const processText = processList.map((item, index) => {
-      const name = item.name || item.processName || '未知流程';
-      const desc = item.desc || item.description || item.remark || '';
-      return `${index + 1}. **${name}${desc ? ' - ' + desc : ''}**`;
+      const type = item.typeName || item.workflowTypeName || '未分类';
+      const name = item.workflowName || item.name || '未知流程';
+      const desc = item.workflowDesc || item.description || '';
+      return `${index + 1}. [${type}] **${name}${desc ? ' - ' + desc : ''}**`;
     }).join('\n');
 
-    // 构建AI提示词
-    const systemPrompt = `你是零跑汽车公司的流程咨询助手。根据以下可发起的OA流程列表，回答用户的问题。
+    // 按流程类型分组统计
+    const typeCount = {};
+    processList.forEach(item => {
+      const type = item.typeName || item.workflowTypeName || '未分类';
+      typeCount[type] = (typeCount[type] || 0) + 1;
+    });
+    const typeSummary = Object.entries(typeCount)
+      .map(([type, count]) => `${type}: ${count}个`)
+      .join('、');
 
-## 可发起的流程列表：
+    // 构建智能AI提示词
+    const systemPrompt = `你是零跑汽车公司的智能流程咨询助手。根据以下可发起的OA审批流程数据库，精准回答用户的流程相关问题。
+
+## 📊 当前账号可发起的流程概览
+共 ${processList.length} 个流程（${typeSummary}）
+
+## 📋 完整流程清单
 ${processText}
 
-## 回答要求：
-1. 根据用户的问题，从流程列表中找到最匹配的流程
-2. 告诉用户具体要走哪个流程
-3. 如果有多个相关流程，都列出来让用户选择
-4. 用简洁友好的语言回答
-5. 如果找不到匹配的流程，建议用户联系相关部门`;
+## 🎯 回答规范
+1. **精准匹配**：根据用户描述的关键词（请假、报销、出差、采购等），从列表中找出最相关的1-3个流程
+2. **清晰指引**：明确告诉用户流程名称和所属分类
+3. **友好建议**：如果找到多个相似流程，帮助用户区分选择
+4. **专业但不生硬**：像一位熟悉公司流程的同事一样自然回答
+5. **兜底处理**：如果确实找不到相关流程，礼貌地建议联系相关部门（人事部/财务部/IT部等）
 
-    // 调用AI生成回答
-    setStatus('正在分析匹配的流程...', 'loading');
+## 💡 回答格式示例
+> 根据您的问题，您需要走 **【xxx流程】**
+>
+> 该流程属于「xxx类」，主要用于...
+>
+> 如果还有其他疑问，可以继续问我~`;
+
+    // 调用AI生成智能回答
+    setStatus('正在智能分析匹配流程...', 'loading');
     const aiAnswer = await callMainModelWithContext(userMessage, null, systemPrompt);
 
     if (!aiAnswer) {
-      // AI回答失败，直接显示流程列表
+      // AI调用失败，返回结构化的流程列表
       return {
-        text: `📋 **为您找到 ${processList.length} 个可发起的流程：**\n\n${processText}\n\n💡 您可以点击侧边栏的 📋 按钮查看完整列表`,
+        text: `📋 **为您找到 ${processList.length} 个可发起的流程：**\n\n${processText}\n\n💡 您可以直接告诉我更具体的需求，我会帮您推荐最合适的流程。`,
         source: 'oa_process_list',
-        sources: [{ title: `OA流程列表 (${processList.length}个)` }],
+        sources: [
+          { title: `OA流程数据库 (${processList.length}个)` },
+          { title: `分类: ${typeSummary}` }
+        ],
         usedFastGPT: false,
         routeType: 'oa_process'
       };
@@ -2211,7 +2253,10 @@ ${processText}
     return {
       text: aiAnswer,
       source: 'oa_process_ai',
-      sources: [{ title: `OA流程智能推荐` }],
+      sources: [
+        { title: `OA流程智能推荐` },
+        { title: `共${processList.length}个流程可用` }
+      ],
       usedFastGPT: false,
       routeType: 'oa_process'
     };
@@ -2219,7 +2264,7 @@ ${processText}
   } catch (error) {
     console.error('[OA流程查询] ❌ 查询失败:', error);
     return {
-      text: `⚠️ **OA流程查询失败**\n\n错误信息：${error.message}\n\n请检查：\n1. 网络连接是否正常\n2. 员工工号是否正确\n3. 是否在公司内网环境\n\n您也可以点击侧边栏 📋 按钮手动查看流程列表。`,
+      text: `⚠️ **OA流程查询遇到问题**\n\n错误信息：${error.message}\n\n可能的原因：\n1. 网络连接不稳定\n2. 员工工号不正确\n3. 不在公司内网环境\n4. OA系统暂时不可用\n\n您可以稍后再试，或者联系IT支持部门获取帮助。`,
       source: 'oa_process_error',
       usedFastGPT: false,
       routeType: 'oa_process'
