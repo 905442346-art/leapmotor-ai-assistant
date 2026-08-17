@@ -343,7 +343,8 @@
 
     <!-- 聊天区域 -->
     <div id="chatContainer" class="chat-container">
-      <div class="welcome-screen">
+      <div id="messageList" class="message-list"></div>
+      <div class="welcome-screen" id="welcomeScreen">
         <div class="welcome-icon">
           <svg width="48" height="48" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133 C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133 L92.3146878,129.686412 C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413 L80.81791,122.33998 C80.4278497,122.115395 80.1928133,121.706151 80.1928133,121.25698 L80.1928133,75.2469538 C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954 L78.3075218,74.163954 Z" fill="currentColor"/>
@@ -365,6 +366,28 @@
           <button class="chip" data-prompt="请列出页面中的主要观点和结论">列出主要观点</button>
         </div>
       </div>
+      <!-- 思考过程模板（隐藏，动态插入到消息中） -->
+<template id="thinkingProcessTemplate">
+  <div class="thinking-process" data-thinking-id="">
+    <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
+      <div class="thinking-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4M12 8h.01"/>
+        </svg>
+        <span class="thinking-title">💭 正在思考...</span>
+      </div>
+      <div class="thinking-toggle">
+        <svg class="toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </div>
+    </div>
+    <div class="thinking-content">
+      <div class="thinking-steps"></div>
+    </div>
+  </div>
+</template>
     </div>
 
     <!-- 输入区域 -->

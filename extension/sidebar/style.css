@@ -2808,6 +2808,222 @@ body {
   margin: 24px 0;
 }
 
+/* ========== 消息列表容器 ========== */
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: none; /* 默认隐藏，有消息时显示 */
+}
+
+.message-list.has-messages {
+  display: block;
+}
+
+/* ========== AI思考过程样式（FastGPT风格）========== */
+.thinking-process {
+  margin: 8px 0 12px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  animation: thinkingFadeIn 0.3s ease;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.thinking-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.thinking-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.thinking-icon svg {
+  animation: thinkingPulse 2s infinite;
+}
+
+.thinking-title {
+  font-weight: 500;
+}
+
+.thinking-toggle {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.thinking-process.expanded .thinking-toggle {
+  transform: rotate(180deg);
+}
+
+.thinking-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.thinking-process.expanded .thinking-content {
+  max-height: 600px; /* 足够显示所有步骤 */
+}
+
+.thinking-steps {
+  padding: 12px 14px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.thinking-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  opacity: 0;
+  transform: translateY(5px);
+  animation: stepSlideIn 0.3s ease forwards;
+}
+
+.thinking-step:last-child {
+  margin-bottom: 0;
+}
+
+/* 延迟动画，让每个步骤依次出现 */
+.thinking-step:nth-child(1) { animation-delay: 0.05s; }
+.thinking-step:nth-child(2) { animation-delay: 0.15s; }
+.thinking-step:nth-child(3) { animation-delay: 0.25s; }
+.thinking-step:nth-child(4) { animation-delay: 0.35s; }
+.thinking-step:nth-child(5) { animation-delay: 0.45s; }
+.thinking-step:nth-child(6) { animation-delay: 0.55s; }
+
+.step-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
+.step-icon.detect {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+.step-icon.route {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.step-icon.fetch {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.step-icon.ai {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.step-icon.success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.step-text {
+  flex: 1;
+}
+
+.route-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.route-badge.oa_process {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.route-badge.system {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.route-badge.page_analysis {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.route-badge.general_chat {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+/* 思考过程动画 */
+@keyframes thinkingFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes thinkingPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes stepSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 暗色主题适配 */
+[data-theme="dark"] .thinking-process {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .thinking-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .about-header {
   display: flex;
   align-items: center;

@@ -2610,6 +2610,108 @@ async function callMainModel(prompt, contextContent) {
 }
 
 // ========== 发送消息 ==========
+// ========== AI思考过程管理器 ==========
+let currentThinkingProcess = null;
+
+/**
+ * 创建并显示思考过程容器
+ */
+function showThinkingProcess(messageId) {
+  // 隐藏欢迎界面，显示消息列表
+  const welcomeScreen = document.getElementById('welcomeScreen');
+  const messageList = document.getElementById('messageList');
+  if (welcomeScreen) welcomeScreen.style.display = 'none';
+  if (messageList) messageList.classList.add('has-messages');
+
+  // 从模板克隆
+  const template = document.getElementById('thinkingProcessTemplate');
+  if (!template) return null;
+
+  const thinkingEl = template.content.cloneNode(true).querySelector('.thinking-process');
+  thinkingEl.dataset.thinkingId = messageId;
+
+  // 插入到消息列表末尾
+  messageList.appendChild(thinkingEl);
+
+  // 自动展开（默认）
+  setTimeout(() => thinkingEl.classList.add('expanded'), 100);
+
+  currentThinkingProcess = thinkingEl;
+  return thinkingEl;
+}
+
+/**
+ * 添加思考步骤
+ * @param {string} icon - 图标类型: detect/route/fetch/ai/success
+ * @param {string} text - 步骤文本
+ */
+function addThinkingStep(icon, text) {
+  if (!currentThinkingProcess) return;
+
+  const stepsContainer = currentThinkingProcess.querySelector('.thinking-steps');
+  if (!stepsContainer) return;
+
+  const stepEl = document.createElement('div');
+  stepEl.className = 'thinking-step';
+  stepEl.innerHTML = `
+    <div class="step-icon ${icon}">${getStepIconChar(icon)}</div>
+    <div class="step-text">${text}</div>
+  `;
+
+  stepsContainer.appendChild(stepEl);
+}
+
+/**
+ * 获取步骤图标字符
+ */
+function getStepIconChar(iconType) {
+  const icons = {
+    detect: '🔍',
+    route: '🚦',
+    fetch: '⚡',
+    ai: '🤖',
+    success: '✅'
+  };
+  return icons[iconType] || '•';
+}
+
+/**
+ * 更新思考标题
+ */
+function updateThinkingTitle(title) {
+  if (!currentThinkingProcess) return;
+  const titleEl = currentThinkingProcess.querySelector('.thinking-title');
+  if (titleEl) titleEl.textContent = title;
+}
+
+/**
+ * 完成思考过程（标记为已完成）
+ */
+function completeThinkingProcess() {
+  if (!currentThinkingProcess) return;
+  updateThinkingTitle('✅ 思考完成');
+
+  // 停止图标动画
+  const iconSvg = currentThinkingProcess.querySelector('.thinking-icon svg');
+  if (iconSvg) iconSvg.style.animation = 'none';
+
+  // 添加完成步骤
+  addThinkingStep('success', '已生成回答，正在展示...');
+}
+
+/**
+ * 获取路由类型的中文显示名和徽章样式
+ */
+function getRouteDisplayInfo(routeType) {
+  const routeMap = {
+    oa_process: { name: 'OA流程查询', badgeClass: 'oa_process' },
+    system: { name: '系统问题(知识库)', badgeClass: 'system' },
+    page_analysis: { name: '页面分析', badgeClass: 'page_analysis' },
+    general_chat: { name: '通用问答', badgeClass: 'general_chat' }
+  };
+  return routeMap[routeType] || { name: routeType, badgeClass: '' };
+}
+
 async function sendMessage() {
   const input = document.getElementById('messageInput');
   const text = input.value.trim();
@@ -2628,7 +2730,15 @@ async function sendMessage() {
   let messageText = text;
   let contextContent = '';
 
-  if (activePageId === 'current') {
+  // 生成唯一消息ID用于关联思考过程
+  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // 显示思考过程容器
+  const thinkingEl = showThinkingProcess(messageId);
+  if (thinkingEl) {
+    // 步骤1：开始分析用户意图
+    addThinkingStep('detect', '正在分析您的问题意图...');
+  }
     window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
     const handler = await new Promise((resolve) => {
       const h = (event) => {
@@ -2680,6 +2790,30 @@ async function sendMessage() {
   addTypingIndicator();
 
   try {
+    // 步骤2：显示识别到的意图（在调用前先做一次快速检测）
+    const quickIntent = detectIntentThreeWay(text);
+    const routeInfo = getRouteDisplayInfo(quickIntent.type);
+
+    // 更新思考步骤：显示路由决策
+    addThinkingStep('route',
+      `问题类型识别为：<span class="route-badge ${routeInfo.badgeClass}">${routeInfo.name}</span>` +
+      (quickIntent.reason ? `<br/><small style="color:var(--text-tertiary);margin-top:4px;display:inline-block;">${quickIntent.reason}</small>` : '')
+    );
+
+    // 根据路由类型显示不同的处理步骤提示
+    if (quickIntent.type === 'oa_process') {
+      addThinkingStep('fetch', '正在调用OA流程接口获取可发起的审批流程...');
+      updateThinkingTitle('💭 正在查询OA流程...');
+    } else if (quickIntent.type === 'system') {
+      addThinkingStep('fetch', '正在连接零跑内部知识库(FastGPT)...');
+      updateThinkingTitle('💭 正在查询知识库...');
+    } else if (quickIntent.type === 'page_analysis') {
+      addThinkingStep('fetch', contextContent ? '正在抓取并分析页面内容...' : '等待页面内容...');
+      updateThinkingTitle('💭 正在分析页面...');
+    } else {
+      updateThinkingTitle('💭 正在思考如何回答...');
+    }
+
     // 使用FastGPT智能路由（如果启用）
     const fastgptResult = await processMessageWithFastGPT(text, contextContent);
 
@@ -2691,24 +2825,48 @@ async function sendMessage() {
       throw new Error('AI处理返回异常');
     }
 
+    // 步骤3/4：显示实际使用的路由和API调用信息
+    const actualRouteInfo = getRouteDisplayInfo(fastgptResult.routeType || quickIntent.type);
+    addThinkingStep('ai',
+      `使用 <strong>${actualRouteInfo.name}</strong> 模式处理` +
+      (fastgptResult.source ? `<br/>数据来源: ${fastgptResult.source}` : '')
+    );
+
+    // 完成思考过程
+    completeThinkingProcess();
+
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
     // 显示AI回答
     const bubble = addMessage('ai', '', true);
     updateLastMessage(aiText);
 
-    // 如果使用了FastGPT知识库，显示来源标签
-    if (fastgptResult.usedFastGPT && fastgptResult.sources && fastgptResult.sources.length > 0) {
+    // 如果使用了FastGPT知识库或OA流程，显示来源标签
+    if (fastgptResult.sources && fastgptResult.sources.length > 0) {
       showRAGSourceTag(bubble, fastgptResult.sources);
+    } else if (fastgptResult.routeType === 'oa_process') {
+      showRAGSourceTag(bubble, [{ title: 'OA流程数据库' }]);
     } else if (fastgptResult.usedFastGPT) {
       showRAGSourceTag(bubble, [{ title: '公司知识库' }]);
     }
 
     chatHistory.push({ role: 'assistant', content: aiText });
     setStatus('就绪');
+
+    // 延迟重置当前思考过程引用（允许下次发送新消息时创建新的）
+    setTimeout(() => { currentThinkingProcess = null; }, 500);
+
   } catch (error) {
     removeTypingIndicator();
     console.error('[sendMessage] 处理消息失败:', error);
+
+    // 思考过程中出错也要标记完成
+    if (currentThinkingProcess) {
+      updateThinkingTitle('❌ 思考中断');
+      addThinkingStep('error', `处理失败: ${error.message}`);
+      setTimeout(() => { currentThinkingProcess = null; }, 500);
+    }
+
     addMessage('ai', `❌ 发生错误: ${error.message}\n\n请检查API设置是否正确。`);
     setStatus('错误', 'error');
     setTimeout(() => setStatus('就绪'), 3000);
