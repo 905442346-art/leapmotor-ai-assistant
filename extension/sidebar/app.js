@@ -2739,27 +2739,9 @@ async function sendMessage() {
     // 步骤1：开始分析用户意图
     addThinkingStep('detect', '正在分析您的问题意图...');
   }
-    window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
-    const handler = await new Promise((resolve) => {
-      const h = (event) => {
-        if (event.data.type === 'PAGE_CONTENT' && event.data.content) {
-          window.removeEventListener('message', h);
-          resolve(event.data.content);
-        }
-      };
-      window.addEventListener('message', h);
-      setTimeout(() => { window.removeEventListener('message', h); resolve(null); }, 3000);
-    });
-    if (handler) {
-      contextContent = formatPageContent(handler);
-      updateCurrentPageInfo({ title: handler.title });
-    }
-  } else {
-    const page = capturedPages.find(p => p.id === activePageId);
-    if (page) {
-      contextContent = formatPageContent(page.content);
-    }
-  }
+
+  // 获取页面内容
+  if (activePageId === 'current') {
 
   if (capturedPages.length > 0) {
     const allContent = capturedPages.map((c, i) =>
@@ -2871,6 +2853,7 @@ async function sendMessage() {
     setStatus('错误', 'error');
     setTimeout(() => setStatus('就绪'), 3000);
   }
+}
 }
 
 /**
