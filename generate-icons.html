@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate Icons</title></head>
+<body>
+<p>请在浏览器中打开此文件，右键保存以下Canvas为PNG图片到 extension/icons/ 目录</p>
+<canvas id="canvas" width="128" height="128"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function drawIcon(size) {
+  canvas.width = size;
+  canvas.height = size;
+  
+  const gradient = ctx.createLinearGradient(0, 0, size, size);
+  gradient.addColorStop(0, '#667eea');
+  gradient.addColorStop(1, '#764ba2');
+  
+  ctx.beginPath();
+  ctx.roundRect(0, 0, size, size, size * 0.2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  
+  ctx.fillStyle = 'white';
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const s = size * 0.35;
+  
+  ctx.beginPath();
+  ctx.arc(centerX, centerY - s*0.1, s*0.5, Math.PI, 0);
+  ctx.lineTo(centerX + s*0.5, centerY + s*0.4);
+  ctx.lineTo(centerX + s*0.15, centerY + s*0.2);
+  ctx.lineTo(centerX - s*0.35, centerY + s*0.6);
+  ctx.lineTo(centerX - s*0.5, centerY + s*0.2);
+  ctx.lineTo(centerX - s*0.5, centerY + s*0.1);
+  ctx.closePath();
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(centerX - s*0.15, centerY - s*0.2, s*0.06, 0, Math.PI*2);
+  ctx.arc(centerX + s*0.15, centerY - s*0.2, s*0.06, 0, Math.PI*2);
+  ctx.fillStyle = '#764ba2';
+  ctx.fill();
+}
+
+drawIcon(128);
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "零跑AI助手",
+  "version": "1.1.0",
+  "description": "随时用快捷键唤起本地AI助手，分析当前页面内容，使用本地大模型",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "commands"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:11434/*",
+    "https://aiflow.leapmotor.com/*",
+    "https://ai.leapmotor.com/*",
+    "https://lppms.leapmotor.com/*",
+    "https://github.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-scripts/content.js"],
+      "css": ["content-scripts/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "toggle-assistant": {
+      "suggested_key": {
+        "default": "Ctrl+J",
+        "mac": "Command+J"
+      },
+      "description": "唤起/关闭AI助手"
+    },
+    "analyze-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+J",
+        "mac": "Command+Shift+J"
+      },
+      "description": "快速分析当前页面"
+    }
+  },
+  "action": {
+    "default_title": "Local AI Assistant"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidebar/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

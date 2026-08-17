@@ -1,0 +1,35 @@
+# ========== 零跑AI助手 - Git忽略文件 ==========
+
+# 打包输出目录（用户可自行生成）
+dist/
+*.zip
+
+# 依赖目录
+node_modules/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE配置
+.idea/
+.vscode/
+*.sublime-*
+*.sublime-project
+
+# 日志文件
+*.log
+npm-debug.log*
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 临时文件
+tmp/
+temp/
+.cache/

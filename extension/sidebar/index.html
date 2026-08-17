@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>零跑AI助手</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 品牌头部 -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133 C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133 L92.3146878,129.686412 C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413 L80.81791,122.33998 C80.4278497,122.115395 80.1928133,121.706151 80.1928133,121.25698 L80.1928133,75.2469538 C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954 L78.3075218,74.163954 Z" fill="currentColor"/>
+            <path d="M109.242306,56.3368778 L101.401093,60.8535363 L101.401093,162.146464 L109.242306,166.663122 C110.017425,167.112293 110.972573,167.112293 111.747693,166.663122 L119.588906,162.146464 L119.588906,83.9758329 C119.583905,83.0126118 120.629066,82.4137179 121.464195,82.8928331 L140.18209,93.6779147 C140.57215,93.9024999 140.807187,94.3117441 140.807187,94.7609145 L140.807187,121.261971 C140.807187,121.711142 140.56715,122.120386 140.18209,122.344971 L129.310409,128.608403 C128.920349,128.832989 128.685312,129.242233 128.685312,129.691403 L128.685312,154.750124 C128.685312,155.713345 129.730474,156.312239 130.565603,155.833124 L157.744806,140.172047 C158.519926,139.722877 159,138.899398 159,138.006047 L159,85.0039342 C159,84.1105841 158.519926,83.2871049 157.744806,82.8379344 L111.747693,56.3368778 C110.972573,55.8877074 110.017425,55.8877074 109.242306,56.3368778 Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <h1>
+          零跑AI助手
+          <span class="brand-sub">LEAPMOTOR AI</span>
+        </h1>
+      </div>
+      <div class="header-actions">
+        <button id="newChatBtn" class="icon-btn" title="新对话">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+        <button id="themeToggle" class="icon-btn" title="切换主题">
+          <svg id="sunIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg id="moonIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <button id="settingsBtn" class="icon-btn" title="设置">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <button id="closeBtn" class="icon-btn" title="关闭">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 当前页面上下文栏 -->
+    <div id="pageContextBar" class="page-context-bar">
+      <div class="context-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span>已抓取页面</span>
+      </div>
+      <div id="pageList" class="page-list">
+        <div class="page-item active" data-page-id="current">
+          <span class="page-favicon">🌐</span>
+          <span class="page-title" id="currentPageTitle">当前页面</span>
+          <button class="page-remove" data-page-id="current" title="移除">×</button>
+        </div>
+      </div>
+      <button id="addPageBtn" class="add-page-btn" title="选择其他标签页抓取">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 标签页选择弹窗 -->
+    <div id="tabPickerModal" class="tab-picker-modal hidden">
+      <div class="tab-picker-overlay"></div>
+      <div class="tab-picker-content">
+        <div class="tab-picker-header">
+          <h3>选择要抓取的标签页</h3>
+          <button id="closeTabPicker" class="icon-btn" title="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div id="tabPickerList" class="tab-picker-list">
+          <div class="tab-picker-loading">正在加载标签页列表...</div>
+        </div>
+        <div class="tab-picker-footer">
+          <span id="selectedCount" class="selected-count">已选择 0 个</span>
+          <button id="captureSelectedBtn" class="btn btn-primary" disabled>抓取选中页面</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <!-- Tab 导航栏 -->
+      <div class="settings-tabs-nav">
+        <button class="settings-tab" data-tab="appearance">
+          <span class="tab-icon">🎨</span>
+          <span class="tab-label">外观</span>
+        </button>
+        <button class="settings-tab active" data-tab="api">
+          <span class="tab-icon">🔌</span>
+          <span class="tab-label">API配置</span>
+        </button>
+        <button class="settings-tab" data-tab="knowledge">
+          <span class="tab-icon">🧠</span>
+          <span class="tab-label">知识库</span>
+        </button>
+        <button class="settings-tab" data-tab="shortcuts">
+          <span class="tab-icon">⌨️</span>
+          <span class="tab-label">快捷键</span>
+        </button>
+      </div>
+
+      <!-- Tab 内容区域 -->
+      <div class="settings-tabs-content">
+
+        <!-- ========== 外观设置 Tab ========= -->
+        <div class="settings-tab-pane" id="tab-appearance">
+          <div class="setting-group">
+            <label>主题模式</label>
+            <div class="theme-toggle-row">
+              <button id="darkModeBtn" class="theme-btn" data-theme="dark">🌙 深色</button>
+              <button id="lightModeBtn" class="theme-btn active" data-theme="light">☀️ 浅色</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <label>玻璃透明度</label>
+            <div class="slider-container">
+              <input type="range" id="glassOpacity" min="0" max="20" value="3" class="slider"/>
+              <span class="slider-value" id="glassOpacityValue">3%</span>
+            </div>
+            <div class="preset-buttons">
+              <button class="preset-btn" data-opacity="3">极简</button>
+              <button class="preset-btn" data-opacity="8">标准</button>
+              <button class="preset-btn" data-opacity="15">明显</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <label>模糊强度</label>
+            <div class="slider-container">
+              <input type="range" id="blurAmount" min="12" max="48" value="24" step="4" class="slider"/>
+              <span class="slider-value" id="blurAmountValue">24px</span>
+            </div>
+          </div>
+
+          <div class="tab-footer-hint">
+            💡 外观设置会立即生效并自动保存
+          </div>
+        </div>
+
+        <!-- ========== API 配置 Tab ========= -->
+        <div class="settings-tab-pane active" id="tab-api">
+          <div class="setting-group">
+            <label>API 类型</label>
+            <select id="apiType" class="select-input">
+              <option value="ollama">Ollama (本地模型)</option>
+              <option value="openai">OpenAI 兼容 API</option>
+            </select>
+          </div>
+
+          <div class="setting-group">
+            <label>API 地址</label>
+            <input type="text" id="apiUrl" value="" placeholder="https://..."/>
+          </div>
+
+          <div class="setting-group">
+            <label>API Key</label>
+            <input type="password" id="apiKey" value="" placeholder="请输入你的API Key"/>
+          </div>
+
+          <div class="setting-group">
+            <label>模型名称</label>
+            <input type="text" id="modelName" value="" placeholder="模型名称"/>
+          </div>
+
+          <div class="setting-group api-test-group">
+            <button id="testApiConnection" class="btn btn-secondary btn-sm">测试连接</button>
+            <button id="openModelSquare" class="btn btn-primary btn-sm model-square-btn">模型广场</button>
+            <span id="apiTestResult" class="api-test-result"></span>
+          </div>
+
+          <div class="tab-footer-hint">
+            ⚠️ API 配置用于主 AI 模型（页面分析、通用问答）
+          </div>
+        </div>
+
+        <!-- ========== 知识库 (FastGPT) Tab ========= -->
+        <div class="settings-tab-pane" id="tab-knowledge">
+          <div class="setting-group">
+            <label>
+              启用智能路由
+              <span class="setting-hint">开启后自动识别系统问题并调用知识库回答</span>
+            </label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="fastgptEnabled"/>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div id="fastgptConfigSection" class="fastgpt-config-section">
+            <div class="config-info-box config-success">
+              <div class="info-icon">✅</div>
+              <div class="info-text">
+                <strong>公司知识库已预配置！</strong><br/>
+                系统问题（OA/HR/IT/制度流程等）将自动查询内部知识库回答。<br/>
+                数据全程内网传输，安全可靠。无需额外配置。
+              </div>
+            </div>
+
+            <div class="setting-group fastgpt-status">
+              <label>FastGPT 工作流状态</label>
+              <div class="status-badge status-connected">
+                <span class="status-dot"></span>
+                已连接 - 零跑内部知识库
+              </div>
+              <span class="field-hint">API地址: https://aiflow.leapmotor.com/api<br/>应用ID: 6a4b7073b415c3419d9fb95d</span>
+            </div>
+          </div>
+
+          <div class="tab-footer-hint">
+            📚 知识库用于回答公司内部系统问题（OA审批、HR政策、IT支持等）
+          </div>
+
+          <!-- ========== OA流程查询配置 ========= -->
+          <div class="setting-group oa-config-section">
+            <label>
+              📋 OA流程查询
+              <span class="setting-hint">配置员工工号后可查询可发起的OA流程</span>
+            </label>
+          </div>
+
+          <div class="setting-group">
+            <label>员工工号</label>
+            <input type="text" id="employeeId" value="" placeholder="请输入你的员工工号（如：E001234）"/>
+            <span class="field-hint">工号用于查询你可发起的OA审批流程，仅保存在本地</span>
+          </div>
+
+          <div class="setting-group">
+            <button id="testOAProcessBtn" class="btn btn-secondary btn-sm">
+              🔍 测试查询流程
+            </button>
+          </div>
+
+          <div id="oaProcessTestResult" class="oa-test-result hidden"></div>
+        </div>
+
+        <!-- ========== 快捷键设置 Tab ========= -->
+        <div class="settings-tab-pane" id="tab-shortcuts">
+          <div class="shortcut-config-list">
+            <div class="shortcut-config-item">
+              <label>打开/关闭助手</label>
+              <button id="shortcutToggleAssistant" class="shortcut-btn" data-action="toggle-assistant" title="点击后按下新的快捷键组合">
+                <span class="shortcut-display">⌘J</span>
+              </button>
+              <span class="shortcut-default">默认: Mac(⌘+J) / Windows(Ctrl+J)</span>
+            </div>
+
+            <div class="shortcut-config-item">
+              <label>分析当前页面</label>
+              <button id="shortcutAnalyzePage" class="shortcut-btn" data-action="analyze-page" title="点击后按下新的快捷键组合">
+                <span class="shortcut-display">⌘⇧J</span>
+              </button>
+              <span class="shortcut-default">默认: Mac(⌘+Shift+J) / Windows(Ctrl+Shift+J)</span>
+            </div>
+          </div>
+
+          <div class="shortcut-hint-text">
+            💡 点击快捷键按钮，然后按下你想要的组合键即可修改。支持 Ctrl/Alt/Shift/Cmd + 字母/数字
+          </div>
+
+          <div class="tab-footer-hint">
+            ⌨️ 快捷键设置会立即生效
+          </div>
+        </div>
+
+        <!-- ========== 关于区域（所有Tab底部显示）========== -->
+        <div class="about-section">
+          <div class="about-header">
+            <div class="about-logo">
+              <svg width="24" height="24" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133 C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133 L92.3146878,129.686412 C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413 L80.81791,122.33998 C80.4278497,122.115395 80.1928133,121.706151 80.1928133,75.2469538 C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954 L78.3075218,74.163954 Z" fill="currentColor"/>
+                <path d="M109.242306,56.3368778 L101.401093,60.8535363 L101.401093,162.146464 L109.242306,166.663122 C110.017425,167.112293 110.972573,167.112293 111.747693,166.663122 L119.588906,162.146464 L119.588906,83.9758329 C119.583905,83.0126118 120.629066,82.4137179 121.464195,82.8928331 L140.18209,93.6779147 C140.57215,93.9024999 140.807187,94.3117441 140.807187,94.7609145 L140.807187,121.261971 C140.807187,121.711142 140.56715,122.120386 140.18209,122.344971 L129.310409,128.608403 C128.920349,128.832989 128.685312,129.242233 128.685312,129.691403 L128.685312,154.750124 C128.685312,155.713345 129.730474,156.312239 130.565603,155.833124 L157.744806,140.172047 C158.519926,139.722877 159,138.899398 159,138.006047 L159,84.1105841 158.519926,83.2871049 157.744806,82.8379344 111.747693,56.3368778 C110.972573,55.8877074 110.017425,55.8877074 109.242306,56.3368778Z" fill="currentColor"/>
+              </svg>
+            </div>
+            <div class="about-info">
+              <h4>零跑AI助手</h4>
+              <p class="version-text">版本 <span id="currentVersionDisplay">v1.1.0</span></p>
+            </div>
+          </div>
+
+          <div class="about-actions">
+            <button id="checkUpdateBtn" class="btn btn-secondary btn-sm" title="检查是否有新版本可用">
+              🔄 检查更新
+            </button>
+            <button id="viewChangelogBtn" class="btn btn-text btn-sm" title="查看更新历史">
+              📋 更新日志
+            </button>
+          </div>
+
+          <div id="updateStatusText" class="update-status-text"></div>
+        </div>
+
+      </div><!-- end .settings-tabs-content -->
+
+      <!-- 底部保存按钮 -->
+      <div class="settings-panel-footer">
+        <button id="saveSettings" class="btn btn-primary">保存设置</button>
+      </div>
+    </div>
+
+    <!-- 聊天区域 -->
+    <div id="chatContainer" class="chat-container">
+      <div class="welcome-screen">
+        <div class="welcome-icon">
+          <svg width="48" height="48" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133 C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133 L92.3146878,129.686412 C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413 L80.81791,122.33998 C80.4278497,122.115395 80.1928133,121.706151 80.1928133,121.25698 L80.1928133,75.2469538 C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954 L78.3075218,74.163954 Z" fill="currentColor"/>
+            <path d="M109.242306,56.3368778 L101.401093,60.8535363 L101.401093,162.146464 L109.242306,166.663122 C110.017425,167.112293 110.972573,167.112293 111.747693,166.663122 L119.588906,162.146464 L119.588906,83.9758329 C119.583905,83.0126118 120.629066,82.4137179 121.464195,82.8928331 L140.18209,93.6779147 C140.57215,93.9024999 140.807187,94.3117441 140.807187,94.7609145 L140.807187,121.261971 C140.807187,121.711142 140.56715,122.120386 140.18209,122.344971 L129.310409,128.608403 C128.920349,128.832989 128.685312,129.242233 128.685312,129.691403 L128.685312,154.750124 C128.685312,155.713345 129.730474,156.312239 130.565603,155.833124 L157.744806,140.172047 C158.519926,139.722877 159,138.899398 159,138.006047 L159,85.0039342 C159,84.1105841 158.519926,83.2871049 157.744806,82.8379344 L111.747693,56.3368778 C110.972573,55.8877074 110.017425,55.8877074 109.242306,56.3368778 Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="brand-tag">LEAPMOTOR</div>
+        <h2>零跑AI助手</h2>
+        <p>智能分析当前页面 · 随时随地获取洞察</p>
+
+        <!-- AI智能推荐问题容器（首次打开时显示） -->
+        <div id="smartSuggestionsContainer" class="smart-suggestions-container"></div>
+
+        <!-- 默认建议（作为降级方案） -->
+        <div class="suggestion-chips" id="defaultSuggestions" style="display: none;">
+          <button class="chip" data-prompt="请总结这个页面的主要内容">总结页面内容</button>
+          <button class="chip" data-prompt="请提取页面中的关键数据和表格">提取关键数据</button>
+          <button class="chip" data-prompt="这个页面是做什么的？请详细解释">解释页面用途</button>
+          <button class="chip" data-prompt="请列出页面中的主要观点和结论">列出主要观点</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-container">
+      <!-- 对话中的智能推荐（输入框上方） -->
+      <div id="inputSuggestionsContainer" class="input-suggestions-container"></div>
+
+      <!-- 文件预览区 -->
+      <div id="filePreview" class="file-preview hidden"></div>
+      <div class="input-wrapper">
+        <button id="fileUploadBtn" class="icon-btn upload-btn" title="上传文件">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <button id="promptFavoritesBtn" class="icon-btn favorites-btn" title="常用提示词">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button id="oaProcessBtn" class="icon-btn oa-process-btn" title="查看可发起的OA流程">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </button>
+        <input type="file" id="fileInput" multiple style="display:none"/>
+        <textarea id="messageInput" placeholder="输入你的问题..." rows="1"></textarea>
+        <button id="sendBtn" class="send-btn" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        <span id="shortcutHint" class="shortcut-hint"></span>
+        <span id="statusIndicator" class="status-indicator">就绪</span>
+      </div>
+    </div>
+
+    <!-- 提示词收藏夹弹窗 -->
+    <div id="promptFavoritesModal" class="prompt-favorites-modal hidden">
+      <div class="favorites-overlay"></div>
+      <div class="favorites-content">
+        <div class="favorites-header">
+          <h3>常用提示词</h3>
+          <button id="closeFavorites" class="icon-btn" title="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 添加新提示词 -->
+        <div class="add-prompt-section">
+          <input type="text" id="newPromptInput" placeholder="输入新的常用提示词..." class="new-prompt-input"/>
+          <button id="addNewPromptBtn" class="btn btn-primary btn-sm">添加</button>
+        </div>
+
+        <!-- 提示词列表 -->
+        <div id="promptList" class="prompt-list">
+          <div class="empty-favorites">暂无收藏的提示词，点击上方添加</div>
+        </div>
+
+        <div class="favorites-footer">
+          <span class="favorites-hint">提示：发送消息后可长按气泡收藏该提示词</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- API配置问题提示弹窗 -->
+    <div id="configWarningModal" class="config-warning-modal hidden">
+      <div class="config-warning-overlay"></div>
+      <div class="config-warning-content">
+        <div class="config-warning-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#FFA726" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <h2>API配置需要完善</h2>
+        <p id="configWarningMessage">检测到以下问题，请完成配置后继续使用：</p>
+
+        <div id="configIssueList" class="config-issue-list">
+          <!-- 动态填充问题列表 -->
+        </div>
+
+        <button id="openConfigSettingsBtn" class="btn btn-primary">前往配置</button>
+        <button id="closeConfigWarningBtn" class="btn btn-text">稍后处理</button>
+      </div>
+    </div>
+
+    <!-- OA流程列表弹窗 -->
+    <div id="oaProcessModal" class="oa-process-modal hidden">
+      <div class="oa-process-overlay"></div>
+      <div class="oa-process-content">
+        <div class="oa-process-header">
+          <h3>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            可发起的OA流程
+          </h3>
+          <button id="closeOaProcessModal" class="icon-btn" title="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="oa-process-body">
+          <!-- 搜索框 -->
+          <div class="oa-search-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="oaProcessSearchInput" placeholder="搜索流程名称..." />
+          </div>
+
+          <!-- 加载状态 -->
+          <div id="oaProcessLoading" class="oa-loading hidden">
+            <div class="loading-spinner"></div>
+            <span>正在查询可发起的流程...</span>
+          </div>
+
+          <!-- 流程列表 -->
+          <div id="oaProcessList" class="oa-process-list">
+            <!-- 动态填充 -->
+          </div>
+
+          <!-- 错误状态 -->
+          <div id="oaProcessError" class="oa-error hidden">
+            <div class="error-icon">⚠️</div>
+            <p id="oaProcessErrorMessage">查询失败，请检查工号配置或网络连接</p>
+            <button id="retryOaProcessBtn" class="btn btn-secondary btn-sm">重试</button>
+          </div>
+
+          <!-- 空状态（未配置工号） -->
+          <div id="oaProcessEmpty" class="oa-empty hidden">
+            <div class="empty-icon">📋</div>
+            <p>请先在设置中配置员工工号</p>
+            <button id="goToConfigEmployeeIdBtn" class="btn btn-primary btn-sm">去设置</button>
+          </div>
+        </div>
+
+        <div class="oa-process-footer">
+          <span class="oa-hint">点击流程项可直接发起或查看详情</span>
+          <button id="refreshOaProcessBtn" class="btn btn-text btn-sm">
+            🔄 刷新
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== 在线更新相关弹窗 ========== -->
+
+    <!-- 新版本发现弹窗 -->
+    <div id="updateAvailableModal" class="update-modal hidden">
+      <div class="update-overlay"></div>
+      <div class="update-content">
+        <div class="update-header">
+          <div class="update-icon">🚀</div>
+          <h3>发现新版本！</h3>
+          <button id="closeUpdateModal" class="icon-btn" title="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="update-body">
+          <div class="version-compare">
+            <div class="version-old">
+              <span class="label">当前版本</span>
+              <span id="oldVersionDisplay" class="value">v1.0.0</span>
+            </div>
+            <svg class="arrow-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="12" x2="19" y2="12"/>
+              <polyline points="12 5 19 12 12 19"/>
+            </svg>
+            <div class="version-new">
+              <span class="label">最新版本</span>
+              <span id="newVersionDisplay" class="value highlight">v1.1.0</span>
+            </div>
+          </div>
+
+          <div class="changelog-section">
+            <h4>📋 更新内容</h4>
+            <div id="updateChangelogContent" class="changelog-content">
+              <!-- 动态填充更新日志 -->
+            </div>
+          </div>
+
+          <!-- 强制更新提示 -->
+          <div id="forceUpdateNotice" class="force-update-notice hidden">
+            ⚠️ 此版本包含重要的安全修复或功能改进，建议尽快更新
+          </div>
+        </div>
+
+        <div class="update-footer">
+          <button id="skipUpdateBtn" class="btn btn-text">稍后提醒</button>
+          <button id="downloadUpdateBtn" class="btn btn-primary">
+            📥 立即下载
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 更新进度弹窗 -->
+    <div id="updateProgressModal" class="update-modal hidden">
+      <div class="update-overlay"></div>
+      <div class="update-content update-progress-content">
+        <div class="progress-header">
+          <h3>正在下载更新...</h3>
+        </div>
+
+        <div class="progress-body">
+          <div class="download-info">
+            <p>零跑AI助手 <span id="downloadingVersion">v1.1.0</span></p>
+            <p class="file-size"><span id="downloadedSize">0 KB</span> / <span id="totalSize">未知大小</span></p>
+          </div>
+
+          <div class="progress-bar-container">
+            <div class="progress-bar" id="downloadProgressBar">
+              <div class="progress-fill" style="width: 0%"></div>
+            </div>
+            <span class="progress-percent" id="downloadPercent">0%</span>
+          </div>
+
+          <div class="progress-status" id="downloadStatusText">准备下载中...</div>
+        </div>
+
+        <div class="progress-footer">
+          <button id="cancelDownloadBtn" class="btn btn-text">取消下载</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 更新日志详情弹窗 -->
+    <div id="changelogModal" class="update-modal hidden">
+      <div class="update-overlay"></div>
+      <div class="update-content changelog-detail-content">
+        <div class="update-header">
+          <h3>📋 更新日志</h3>
+          <button id="closeChangelogModal" class="icon-btn" title="关闭">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="changelog-body" id="fullChangelogContent">
+          <!-- 动态填充完整更新历史 -->
+        </div>
+      </div>
+    </div>
+
+    <!-- 首次使用引导弹窗 -->
+    <div id="onboardingModal" class="onboarding-modal hidden">
+      <div class="onboarding-overlay"></div>
+      <div class="onboarding-content">
+        <div class="onboarding-icon">
+          <svg width="48" height="48" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133 C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133 L92.3146878,129.686412 C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413 L80.81791,122.33998 C80.4278497,122.115395 80.1928133,121.706151 80.1928133,121.25698 L80.1928133,75.2469538 C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954 L78.3075218,74.163954 Z" fill="#8FE040"/>
+            <path d="M109.242306,56.3368778 L101.401093,60.8535363 L101.401093,162.146464 L109.242306,166.663122 C110.017425,167.112293 110.972573,167.112293 111.747693,166.663122 L119.588906,162.146464 L119.588906,83.9758329 C119.583905,83.0116118 120.629066,82.4137179 121.464195,82.8928331 L140.18209,93.6779147 C140.57215,93.9024999 140.807187,94.3117441 140.807187,94.7609145 L140.807187,121.261971 C140.807187,121.711142 140.56715,122.120386 140.18209,122.344971 L129.310409,128.608403 C128.920349,128.832989 128.685312,129.242233 128.685312,129.691403 L128.685312,154.750124 C128.685312,155.713345 129.730474,156.312239 130.565603,155.833124 L157.744806,140.172047 C158.519926,139.722877 159,138.899398 159,138.006047 L159,85.0039342 C159,84.1105841 158.519926,83.2871049 157.744806,82.8379344 L111.747693,56.3368778 C110.972573,55.8877074 110.017425,55.8877074 109.242306,56.3368778 Z" fill="#8FE040"/>
+          </svg>
+        </div>
+        <h2>欢迎使用零跑AI助手</h2>
+        <p>开始使用前，请先配置你的API Key</p>
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <div class="step-num">1</div>
+            <div class="step-info">
+              <strong>获取API Key</strong>
+              <span>访问 agnes-ai.com 获取你的专属API Key</span>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num">2</div>
+            <div class="step-info">
+              <strong>填写配置</strong>
+              <span>点击下方按钮打开设置面板，填入API Key和模型名称</span>
+            </div>
+          </div>
+          <div class="onboarding-step">
+            <div class="step-num">3</div>
+            <div class="step-info">
+              <strong>开始使用</strong>
+              <span>保存设置后即可随时唤起助手进行对话</span>
+            </div>
+          </div>
+        </div>
+        <button id="openSettingsBtn" class="btn btn-primary">打开设置</button>
+        <button id="skipOnboardingBtn" class="btn btn-text">稍后再说</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "local-ai-assistant",
+  "version": "1.0.0",
+  "description": "Local AI assistant that can analyze current page, similar to Gemini",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "keywords": ["ai", "assistant", "ollama", "chrome-extension"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1"
+  }
+}
