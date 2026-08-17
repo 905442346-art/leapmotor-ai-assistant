@@ -116,8 +116,8 @@
           <span class="tab-label">外观</span>
         </button>
         <button class="settings-tab active" data-tab="api">
-          <span class="tab-icon">🔌</span>
-          <span class="tab-label">API配置</span>
+          <span class="tab-icon">⚙️</span>
+          <span class="tab-label">基础配置</span>
         </button>
         <button class="settings-tab" data-tab="knowledge">
           <span class="tab-icon">🧠</span>
@@ -126,6 +126,10 @@
         <button class="settings-tab" data-tab="shortcuts">
           <span class="tab-icon">⌨️</span>
           <span class="tab-label">快捷键</span>
+        </button>
+        <button class="settings-tab" data-tab="about">
+          <span class="tab-icon">🔔</span>
+          <span class="tab-label">关于与更新</span>
         </button>
       </div>
 
@@ -168,8 +172,10 @@
           </div>
         </div>
 
-        <!-- ========== API 配置 Tab ========= -->
+        <!-- ========== 基础配置 Tab (原API配置 + 工号) ========= -->
         <div class="settings-tab-pane active" id="tab-api">
+          <h3 class="section-title">🤖 AI模型配置</h3>
+
           <div class="setting-group">
             <label>API 类型</label>
             <select id="apiType" class="select-input">
@@ -199,8 +205,26 @@
             <span id="apiTestResult" class="api-test-result"></span>
           </div>
 
+          <div class="divider"></div>
+
+          <h3 class="section-title">👤 个人信息配置</h3>
+
+          <div class="setting-group">
+            <label>员工工号</label>
+            <input type="text" id="employeeId" value="" placeholder="请输入你的员工工号（如：E001234）"/>
+            <span class="field-hint">工号用于查询你可发起的OA审批流程，仅保存在本地浏览器</span>
+          </div>
+
+          <div class="setting-group">
+            <button id="testOAProcessBtn" class="btn btn-secondary btn-sm">
+              🔍 测试查询OA流程
+            </button>
+          </div>
+
+          <div id="oaProcessTestResult" class="oa-test-result hidden"></div>
+
           <div class="tab-footer-hint">
-            ⚠️ API 配置用于主 AI 模型（页面分析、通用问答）
+            ⚙️ 基础配置会自动保存，更新插件后不会丢失
           </div>
         </div>
 
@@ -240,28 +264,6 @@
           <div class="tab-footer-hint">
             📚 知识库用于回答公司内部系统问题（OA审批、HR政策、IT支持等）
           </div>
-
-          <!-- ========== OA流程查询配置 ========= -->
-          <div class="setting-group oa-config-section">
-            <label>
-              📋 OA流程查询
-              <span class="setting-hint">配置员工工号后可查询可发起的OA流程</span>
-            </label>
-          </div>
-
-          <div class="setting-group">
-            <label>员工工号</label>
-            <input type="text" id="employeeId" value="" placeholder="请输入你的员工工号（如：E001234）"/>
-            <span class="field-hint">工号用于查询你可发起的OA审批流程，仅保存在本地</span>
-          </div>
-
-          <div class="setting-group">
-            <button id="testOAProcessBtn" class="btn btn-secondary btn-sm">
-              🔍 测试查询流程
-            </button>
-          </div>
-
-          <div id="oaProcessTestResult" class="oa-test-result hidden"></div>
         </div>
 
         <!-- ========== 快捷键设置 Tab ========= -->
@@ -293,8 +295,51 @@
           </div>
         </div>
 
-        <!-- ========== 关于区域（所有Tab底部显示）========== -->
-        <div class="about-section">
+        <!-- ========== 关于与更新 Tab ========= -->
+        <div class="settings-tab-pane" id="tab-about">
+          <div class="about-card">
+            <div class="about-header">
+              <div class="about-logo">
+                <svg width="48" height="48" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M78.3075218,74.163954 L63.2551941,82.8379344 C62.4800742,83.2871049 62,84.1105841 62,85.0039342 L62,138.001057 C62,138.894407 62.4800742,139.717886 63.2551941,140.167056 L90.4343971,155.828133C91.2695262,156.307248 92.3146878,155.708354 92.3146878,154.745133L92.3146878,129.686412C92.3146878,129.237242 92.0746507,128.827998 91.6895912,128.603413L80.81791,122.33998C80.4278497,122.115395 80.1928133,121.706151 80.1928133,75.2469538C80.1928133,74.2837327 79.1476517,73.6848388 78.3125226,74.163954L78.3075218,74.163954Z" fill="currentColor"/>
+                  <path d="M109.242306,56.3368778 L101.401093,60.8535363 L101.401093,162.146464L109.242306,166.663122C110.017425,167.112293 110.972573,167.112293 111.747693,166.663122L119.588906,162.146464L119.588906,83.9758329C119.583905,83.0126118 120.629066,82.4137179 121.464195,82.8928331L140.18209,93.6779147C140.57215,93.9024999 140.807187,94.3117441 140.807187,94.7609145L140.807187,121.261971C140.807187,121.711142 140.56715,122.120386 140.18209,122.344971L129.310409,128.608403C128.920349,128.832989 128.685312,129.242233 128.685312,129.691403L128.685312,154.750124C128.685312,155.713345 129.730474,156.312239 130.565603,155.833124L157.744806,140.172047C158.519926,139.722877 159,138.899398 159,138.006047L159,85.0039342C159,84.1105841 158.519926,83.2871049 157.744806,82.8379344 111.747693,56.3368778C110.972573,55.8877074 110.017425,55.8877074 109.242306,56.3368778Z" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="about-info">
+                <h3>零跑AI助手</h3>
+                <p class="version-text">版本 <strong id="currentVersionDisplay">v1.1.0</strong></p>
+                <p class="build-info">基于零跑汽车品牌设计</p>
+              </div>
+            </div>
+
+            <div class="about-actions">
+              <button id="checkUpdateBtn" class="btn btn-primary btn-block" title="检查是否有新版本可用">
+                🔄 检查更新
+              </button>
+              <button id="viewChangelogBtn" class="btn btn-secondary btn-block" title="查看更新历史">
+                📋 查看更新日志
+              </button>
+            </div>
+
+            <div id="updateStatusText" class="update-status-text"></div>
+          </div>
+
+          <div class="setting-group about-links-group">
+            <label>相关链接</label>
+            <div class="link-buttons">
+              <a href="https://github.com/905442346-art/leapmotor-ai-assistant" target="_blank" class="btn btn-text btn-sm">
+                🔗 GitHub仓库
+              </a>
+              <a href="https://github.com/905442346-art/leapmotor-ai-assistant/issues" target="_blank" class="btn btn-text btn-sm">
+                🐛 问题反馈
+              </a>
+            </div>
+          </div>
+
+          <div class="tab-footer-hint">
+            💡 插件配置保存在本地浏览器中，更新后不会丢失
+          </div>
+        </div>
           <div class="about-header">
             <div class="about-logo">
               <svg width="24" height="24" viewBox="0 0 222 222" fill="none" xmlns="http://www.w3.org/2000/svg">

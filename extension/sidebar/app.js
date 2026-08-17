@@ -3386,6 +3386,17 @@ function saveSettings() {
   };
   localStorage.setItem('aiSettings', JSON.stringify(settings));
 
+  // 保存员工工号（基础配置Tab）
+  const employeeIdInput = document.getElementById('employeeId');
+  if (employeeIdInput) {
+    const empId = employeeIdInput.value.trim();
+    if (empId) {
+      localStorage.setItem('employeeId', empId);
+      employeeId = empId;
+      console.log('[设置] ✅ 员工工号已保存:', empId);
+    }
+  }
+
   // FastGPT配置已预固定，只保存用户的启用/禁用选择
   const fastgptEnabled = document.getElementById('fastgptEnabled')?.checked ?? FASTGPT_CONFIG.enabled;
   localStorage.setItem('fastgptEnabled', fastgptEnabled);

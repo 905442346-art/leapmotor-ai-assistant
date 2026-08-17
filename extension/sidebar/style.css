@@ -2721,6 +2721,93 @@ body {
   border-top: 1px solid var(--glass-border);
 }
 
+/* ========== 关于与更新Tab样式 ========== */
+.about-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+}
+
+.about-card .about-header {
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.about-card .about-logo svg {
+  width: 48px;
+  height: 48px;
+}
+
+.about-card .about-info h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.about-card .about-info .version-text {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.about-card .about-info .build-info {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.about-card .about-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+.about-links-group {
+  margin-top: 20px;
+}
+
+.link-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.link-buttons .btn {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* 基础配置Tab分区标题 */
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 20px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.section-title:first-child {
+  margin-top: 0;
+}
+
+.divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 24px 0;
+}
+
 .about-header {
   display: flex;
   align-items: center;
