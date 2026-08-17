@@ -3378,47 +3378,74 @@ function toggleFastGPTSection(show) {
 }
 
 function saveSettings() {
-  settings = {
-    apiType: document.getElementById('apiType').value,
-    apiUrl: document.getElementById('apiUrl').value,
-    apiKey: document.getElementById('apiKey').value,
-    modelName: document.getElementById('modelName').value
-  };
-  localStorage.setItem('aiSettings', JSON.stringify(settings));
+  try {
+    console.log('[设置] 💾 开始保存配置...');
 
-  // 保存员工工号（基础配置Tab）
-  const employeeIdInput = document.getElementById('employeeId');
-  if (employeeIdInput) {
-    const empId = employeeIdInput.value.trim();
-    if (empId) {
-      localStorage.setItem('employeeId', empId);
-      employeeId = empId;
-      console.log('[设置] ✅ 员工工号已保存:', empId);
+    // 1. 保存API配置
+    settings = {
+      apiType: document.getElementById('apiType')?.value || 'openai',
+      apiUrl: document.getElementById('apiUrl')?.value || '',
+      apiKey: document.getElementById('apiKey')?.value || '',
+      modelName: document.getElementById('modelName')?.value || ''
+    };
+    localStorage.setItem('aiSettings', JSON.stringify(settings));
+    console.log('[设置] ✅ API配置已保存');
+
+    // 2. 保存员工工号（基础配置Tab）
+    const employeeIdInput = document.getElementById('employeeId');
+    if (employeeIdInput) {
+      const empId = employeeIdInput.value.trim();
+      if (empId) {
+        localStorage.setItem('employeeId', empId);
+        employeeId = empId;
+        console.log('[设置] ✅ 员工工号已保存:', empId);
+      }
     }
+
+    // 3. 保存FastGPT配置
+    const fastgptEnabled = document.getElementById('fastgptEnabled')?.checked ?? FASTGPT_CONFIG.enabled;
+    localStorage.setItem('fastgptEnabled', fastgptEnabled);
+    FASTGPT_CONFIG.enabled = fastgptEnabled;
+
+    // 4. 标记引导已完成
+    localStorage.setItem('onboardingSeen', 'true');
+    closeOnboarding();
+    closeConfigWarning();
+
+    // 5. 关闭设置面板并返回问答界面
+    const panel = document.getElementById('settingsPanel');
+    if (panel) {
+      panel.classList.add('hidden');
+      console.log('[设置] 🚪 设置面板已关闭');
+    }
+
+    // 6. 显示保存成功状态
+    setStatus('✅ 设置已保存', 'success');
+
+    // 7. 延迟检测API连接（不阻塞界面返回）
+    setTimeout(async () => {
+      try {
+        await checkApiConfigAndShowWarning();
+        if (isConfigValid) {
+          setTimeout(() => updateApiStatus('success', '就绪'), 1500);
+        }
+      } catch (error) {
+        console.error('[设置] ⚠️ API检测失败:', error);
+        // 即使检测失败也不影响使用
+        updateApiStatus('success', '就绪');
+      }
+    }, 500);
+
+    console.log('[设置] 🎉 配置保存完成，已返回问答界面');
+
+  } catch (error) {
+    console.error('[设置] ❌ 保存失败:', error);
+    alert('保存设置时出错: ' + error.message);
+
+    // 即使出错也尝试关闭设置面板
+    const panel = document.getElementById('settingsPanel');
+    if (panel) panel.classList.add('hidden');
   }
-
-  // FastGPT配置已预固定，只保存用户的启用/禁用选择
-  const fastgptEnabled = document.getElementById('fastgptEnabled')?.checked ?? FASTGPT_CONFIG.enabled;
-  localStorage.setItem('fastgptEnabled', fastgptEnabled);
-  FASTGPT_CONFIG.enabled = fastgptEnabled;
-
-  localStorage.setItem('onboardingSeen', 'true');
-  closeOnboarding();
-  closeConfigWarning(); // 关闭配置警告弹窗
-  const panel = document.getElementById('settingsPanel');
-  panel.classList.add('hidden');
-  setStatus('设置已保存，正在验证...', 'loading');
-
-  // 延迟检测API连接状态（给UI一点时间更新）
-  setTimeout(async () => {
-    await checkApiConfigAndShowWarning();
-
-    if (isConfigValid) {
-      setStatus('✓ 配置正确，可以使用', 'success');
-      setTimeout(() => updateApiStatus('success', '就绪'), 2000);
-    }
-    // 如果配置有问题，checkApiConfigAndShowWarning已经显示了警告弹窗
-  }, 300);
 }
 
 function initGlassControls() {
