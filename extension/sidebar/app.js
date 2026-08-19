@@ -4855,10 +4855,11 @@ async function checkForUpdates(silent = false) {
         // 缓存更新信息
         updateInfoCache = {
           version: releaseInfo.tag_name,
-          downloadUrl: releaseInfo.zipball_url || releaseInfo.browser_download_url,
+          downloadUrl: releaseInfo.zipDownloadUrl || releaseInfo.zipball_url || releaseInfo.browser_download_url,
+          zipDownloadUrl: releaseInfo.zipDownloadUrl,
           changelog: releaseInfo.body || '请查看完整更新日志',
           releaseDate: releaseInfo.published_at,
-          isForceUpdate: false, // 可根据需要标记强制更新
+          isForceUpdate: false,
           htmlUrl: releaseInfo.html_url
         };
 
@@ -4925,6 +4926,19 @@ async function fetchLatestReleaseFromGitHub() {
 
   const data = await response.json();
   console.log('[在线更新] ✅ 获取到发布信息:', data.tag_name);
+
+  // 从assets中查找我们上传的zip安装包（文件名以leapmotor-ai-assistant-v开头）
+  let zipDownloadUrl = null;
+  if (data.assets && data.assets.length > 0) {
+    const zipAsset = data.assets.find(a => a.name && a.name.endsWith('.zip'));
+    if (zipAsset) {
+      zipDownloadUrl = zipAsset.browser_download_url;
+      console.log('[在线更新] 📦 找到安装包:', zipAsset.name);
+    }
+  }
+
+  // 把zip下载链接挂到data上
+  data.zipDownloadUrl = zipDownloadUrl;
 
   return data;
 }
@@ -5054,13 +5068,13 @@ function closeUpdateAvailableModal() {
  * 开始下载更新
  */
 function startDownloadUpdate(updateData) {
-  if (!updateData || !updateData.downloadUrl) {
+  if (!updateData || (!updateData.zipDownloadUrl && !updateData.downloadUrl)) {
     console.error('[在线更新] ⚠️ 无下载链接');
     showUpdateStatus('❌ 下载链接无效', 'error');
     return;
   }
 
-  console.log('[在线更新] 📥 开始下载:', updateData.downloadUrl);
+  console.log('[在线更新] 📥 开始下载更新...');
 
   // 关闭新版本弹窗
   closeUpdateAvailableModal();
@@ -5073,39 +5087,77 @@ function startDownloadUpdate(updateData) {
   const verEl = document.getElementById('downloadingVersion');
   if (verEl) verEl.textContent = updateData.version;
 
-  // 由于浏览器安全限制，Chrome扩展无法直接下载并安装
-  // 所以我们改为在新标签页打开下载链接
-  setTimeout(() => {
-    closeUpdateProgressModal();
+  const progressBar = progressModal ? progressModal.querySelector('.progress-fill') : null;
+  const statusText = progressModal ? progressModal.querySelector('.progress-status') : null;
 
-    // 方式1：直接打开下载页面（推荐）
-    if (updateData.htmlUrl) {
-      window.open(updateData.htmlUrl, '_blank');
-      showUpdateStatus('已在浏览器中打开下载页面', 'success');
-    } else if (updateData.downloadUrl) {
-      window.open(updateData.downloadUrl, '_blank');
-      showUpdateStatus('已开始下载，请在浏览器中查看', 'success');
+  // 使用zip直链自动下载
+  const downloadUrl = updateData.zipDownloadUrl || updateData.downloadUrl;
+
+  // 模拟进度条
+  let progress = 0;
+  const progressInterval = setInterval(() => {
+    progress += Math.random() * 15 + 5;
+    if (progress >= 95) {
+      progress = 95;
+      clearInterval(progressInterval);
     }
+    if (progressBar) progressBar.style.width = progress + '%';
+    if (statusText) statusText.textContent = `正在下载... ${Math.round(progress)}%`;
+  }, 200);
 
-    // 显示安装指引
-    showInstallGuide();
-  }, 1500); // 模拟1.5秒的"准备"过程
+  // 创建隐藏a标签触发下载
+  setTimeout(() => {
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `leapmotor-ai-assistant-${updateData.version}.zip`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // 下载已触发，进度100%
+    clearInterval(progressInterval);
+    if (progressBar) progressBar.style.width = '100%';
+    if (statusText) statusText.textContent = '下载完成！正在准备安装指引...';
+
+    setTimeout(() => {
+      closeUpdateProgressModal();
+      showInstallGuide(updateData);
+    }, 800);
+  }, 1200);
 }
 
 /**
- * 显示安装指引
+ * 显示安装指引（重要：不要删除旧版本，只需刷新即可）
  */
-function showInstallGuide() {
+function showInstallGuide(updateData) {
   const statusEl = document.getElementById('updateStatusText');
   if (statusEl) {
     statusEl.innerHTML = `
-      <div style="margin-top:8px">
-        <strong>安装步骤：</strong><br>
-        1. 下载完成后解压ZIP文件<br>
-        2. 打开 <code>chrome://extensions/</code><br>
-        3. 点击「加载已解压的扩展程序」<br>
-        4. 选择解压后的文件夹<br>
-        5. 完成更新！🎉
+      <div style="margin-top:8px;line-height:1.8">
+        <div style="margin-bottom:10px;padding:10px 12px;background:rgba(143,224,64,0.08);border:1px solid rgba(143,224,64,0.2);border-radius:8px;">
+          ✅ <strong>安装包已开始下载！</strong><br>
+          <span style="font-size:12px;color:var(--text-secondary);">请按以下3步完成更新（<span style="color:#e74c3c;font-weight:600">无需删除旧版本</span>，不会重复安装）</span>
+        </div>
+        <div style="padding-left:4px;font-size:13px;">
+          <div style="margin-bottom:8px;"><strong>① 解压并覆盖旧文件</strong><br>
+            <span style="color:var(--text-secondary);font-size:12px;">下载完成后解压ZIP，将里面的 <code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;">extension</code> 文件夹中的所有文件，<strong>复制覆盖</strong>到你当时「加载已解压的扩展程序」时选择的目录中（替换旧文件）。</span>
+          </div>
+          <div style="margin-bottom:8px;"><strong>② 打开扩展管理页面</strong><br>
+            <button onclick="window.open('chrome://extensions/','_blank')" style="margin-top:4px;padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">
+              🚀 一键打开 chrome://extensions/
+            </button>
+          </div>
+          <div><strong>③ 点击刷新按钮</strong><br>
+            <span style="color:var(--text-secondary);font-size:12px;">在扩展管理页面，找到「零跑AI助手」卡片，点击卡片右下角的 <strong>🔄 刷新图标</strong> 即可完成更新！</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.25);border-radius:6px;font-size:11px;color:#e74c3c;">
+          ⚠️ <strong>重要：</strong>不要点击「加载已解压的扩展程序」按钮！那会创建副本导致出现两个零跑AI助手。<br>正确做法是：<strong>覆盖旧文件后直接点卡片右下角的🔄刷新按钮。</strong>
+        </div>
+        <div style="margin-top:8px;padding:8px 12px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);border-radius:6px;font-size:11px;color:var(--text-secondary);">
+          💡 Chrome出于安全考虑，非应用商店安装的本地扩展无法真正静默自动更新，这是浏览器限制。所有设置、API Key、收藏夹将完整保留。
+        </div>
       </div>
     `;
     statusEl.className = 'update-status-text success';

@@ -567,10 +567,11 @@ body {
   border-bottom: 1px solid var(--glass-border);
   animation: slideDown 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 9;
-  /* 【修复】移除外层滚动，避免嵌套滚动条 */
-  overflow: visible;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+  max-height: 70vh;
+  flex-shrink: 0;
 }
 
 @keyframes slideDown {
@@ -647,23 +648,31 @@ body {
 /* Tab 内容区域 - 唯一滚动容器 */
 .settings-tabs-content {
   overflow-y: auto;
-  flex: 1; /* 【修复】填充剩余空间 */
-  min-height: 0; /* 允许flex子项收缩 */
+  flex: 1;
+  min-height: 0;
   padding-right: 4px;
-  /* 【优化】使用自定义滚动条样式 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .settings-tabs-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.settings-tabs-content::-webkit-scrollbar-track {
+  width: 0;
   background: transparent;
 }
 
-.settings-tabs-content::-webkit-scrollbar-thumb {
+.settings-tabs-content:hover::-webkit-scrollbar,
+.settings-tabs-content:active::-webkit-scrollbar {
+  width: 5px;
+}
+
+.settings-tabs-content:hover::-webkit-scrollbar-thumb,
+.settings-tabs-content:active::-webkit-scrollbar-thumb {
   background: var(--glass-border-bright);
   border-radius: 3px;
+}
+
+.settings-tabs-content:hover::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .settings-tab-pane {
