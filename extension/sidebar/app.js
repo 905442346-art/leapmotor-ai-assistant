@@ -1367,7 +1367,10 @@ function addMessage(role, content, isHTML = false) {
   msg.appendChild(msgContent);
   container.appendChild(msg);
   container.scrollTop = container.scrollHeight;
-  return bubble;
+  // 同时挂载bubble引用，方便外部访问
+  msg._bubble = bubble;
+  msg._content = msgContent;
+  return msg;
 }
 
 // 显示自定义右键菜单
@@ -2824,15 +2827,18 @@ function showThinkingProcess(messageId) {
   if (messageList) messageList.classList.add('has-messages');
 
   // 先创建AI气泡（空内容）
-  const aiBubble = addMessage('ai', '', true);
-  // aiBubble 是 .message.ai 元素
+  const aiMessageEl = addMessage('ai', '', true);
+  // aiMessageEl 是 .message.ai 外层元素
   // 其内部结构：.message-avatar + .message-content > .message-bubble（空）
-  const msgContent = aiBubble.querySelector('.message-content');
-  const bubble = aiBubble.querySelector('.message-bubble');
+  const msgContent = aiMessageEl._content || aiMessageEl.querySelector('.message-content');
+  const bubble = aiMessageEl._bubble || aiMessageEl.querySelector('.message-bubble');
 
   // 从模板克隆思考过程
   const template = document.getElementById('thinkingProcessTemplate');
-  if (!template || !msgContent || !bubble) return null;
+  if (!template || !msgContent || !bubble) {
+    console.error('[showThinkingProcess] ❌ DOM元素查找失败:', { template: !!template, msgContent: !!msgContent, bubble: !!bubble });
+    return null;
+  }
 
   const thinkingEl = template.content.cloneNode(true).querySelector('.thinking-process');
   thinkingEl.dataset.thinkingId = messageId;
@@ -2844,7 +2850,7 @@ function showThinkingProcess(messageId) {
   setTimeout(() => thinkingEl.classList.add('expanded'), 100);
 
   currentThinkingProcess = thinkingEl;
-  currentAIBubble = aiBubble;
+  currentAIBubble = aiMessageEl;
   return thinkingEl;
 }
 
@@ -3078,7 +3084,7 @@ async function sendMessage() {
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
     // 显示AI回答（复用showThinkingProcess已创建的气泡）
-    const bubble = currentAIBubble ? currentAIBubble.querySelector('.message-bubble') : null;
+    const bubble = currentAIBubble ? (currentAIBubble._bubble || currentAIBubble.querySelector('.message-bubble')) : null;
 
     if (bubble) {
       if (fastgptResult.isHtml) {
@@ -3095,6 +3101,8 @@ async function sendMessage() {
       } else if (fastgptResult.usedFastGPT) {
         showRAGSourceTag(currentAIBubble, [{ title: '公司知识库' }]);
       }
+    } else {
+      console.error('[sendMessage] ❌ 找不到AI回答bubble，currentAIBubble:', currentAIBubble);
     }
 
     chatHistory.push({ role: 'assistant', content: aiText });
