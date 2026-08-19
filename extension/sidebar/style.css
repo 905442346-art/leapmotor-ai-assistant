@@ -1232,7 +1232,7 @@ body {
 
 /* ========== RAG 来源标签 ========== */
 .rag-source-tag {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
@@ -1243,6 +1243,8 @@ body {
   color: var(--accent);
   font-weight: 500;
   margin-top: 8px;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .rag-source-tag::before {
@@ -1463,6 +1465,17 @@ body {
 .message-content {
   flex: 1;
   min-width: 0;
+  display: block;
+}
+
+.message-content > * {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.message-content > .rag-source-tag {
+  width: fit-content;
 }
 
 .message-bubble {

@@ -2826,29 +2826,102 @@ function showThinkingProcess(messageId) {
   if (welcomeScreen) welcomeScreen.style.display = 'none';
   if (messageList) messageList.classList.add('has-messages');
 
-  // 先创建AI气泡（空内容）
-  const aiMessageEl = addMessage('ai', '', true);
-  const bubble = aiMessageEl._bubble || aiMessageEl.querySelector('.message-bubble');
+  // ===== 重构：不创建空bubble（避免白色空椭圆），只创建外层AI消息结构 =====
+  const container = document.getElementById('chatContainer');
 
-  // 从模板克隆思考过程
+  const msg = document.createElement('div');
+  msg.className = 'message ai thinking-active';
+  msg.dataset.messageId = messageId;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.innerHTML = LP_LOGO_SVG;
+
+  const msgContent = document.createElement('div');
+  msgContent.className = 'message-content';
+
+  // 从模板克隆思考过程（直接作为msgContent的唯一子元素）
   const template = document.getElementById('thinkingProcessTemplate');
-  if (!template || !bubble) {
-    console.error('[showThinkingProcess] ❌ DOM元素查找失败:', { template: !!template, bubble: !!bubble });
+  if (!template) {
+    console.error('[showThinkingProcess] ❌ 找不到thinkingProcessTemplate');
     return null;
   }
 
   const thinkingEl = template.content.cloneNode(true).querySelector('.thinking-process');
   thinkingEl.dataset.thinkingId = messageId;
 
-  // 将思考过程插入到 bubble 内部最前面（确保垂直排列）
-  bubble.insertBefore(thinkingEl, bubble.firstChild);
+  msgContent.appendChild(thinkingEl);
+  msg.appendChild(avatar);
+  msg.appendChild(msgContent);
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
 
   // 自动展开（默认）
   setTimeout(() => thinkingEl.classList.add('expanded'), 100);
 
+  // 挂载引用
+  msg._thinking = thinkingEl;
+  msg._content = msgContent;
   currentThinkingProcess = thinkingEl;
-  currentAIBubble = aiMessageEl;
+  currentAIBubble = msg;
   return thinkingEl;
+}
+
+// 创建AI回答区域（思考完成后调用）
+function createAnswerArea() {
+  if (!currentAIBubble) return null;
+  const msgContent = currentAIBubble._content || currentAIBubble.querySelector('.message-content');
+  if (!msgContent) return null;
+
+  // 创建bubble（此时才有真正的玻璃背景）
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  // 在思考过程后面插入bubble
+  const thinkingEl = currentAIBubble._thinking || currentAIBubble.querySelector('.thinking-process');
+  if (thinkingEl && thinkingEl.nextSibling) {
+    msgContent.insertBefore(bubble, thinkingEl.nextSibling);
+  } else {
+    msgContent.appendChild(bubble);
+  }
+
+  currentAIBubble._bubble = bubble;
+  currentAIBubble.classList.remove('thinking-active');
+  return bubble;
+}
+
+// 流式打字机效果输出
+function typeWriterEffect(element, htmlContent, isHtml, onComplete) {
+  // HTML内容不做逐字打字（会破坏标签），做淡入显示
+  if (isHtml || htmlContent.includes('<') && htmlContent.includes('>')) {
+    element.style.opacity = '0';
+    element.innerHTML = htmlContent;
+    element.style.transition = 'opacity 0.3s ease';
+    requestAnimationFrame(() => { element.style.opacity = '1'; });
+    if (onComplete) setTimeout(onComplete, 300);
+    return;
+  }
+
+  // 纯文本逐字输出（简单字符流效果）
+  const chars = htmlContent.split('');
+  let i = 0;
+  element.textContent = '';
+  element.style.minHeight = '1em';
+
+  function typeNext() {
+    if (i >= chars.length) {
+      if (onComplete) onComplete();
+      return;
+    }
+    // 每帧输出2-4个字符，模拟流式
+    const chunk = Math.min(chars.length - i, 2 + Math.floor(Math.random() * 3));
+    element.textContent += chars.slice(i, i + chunk).join('');
+    i += chunk;
+    const container = document.getElementById('chatContainer');
+    if (container) container.scrollTop = container.scrollHeight;
+    setTimeout(typeNext, 15 + Math.random() * 20);
+  }
+  typeNext();
 }
 
 /**
@@ -3075,35 +3148,46 @@ async function sendMessage() {
       (fastgptResult.source ? `<br/>数据来源: ${fastgptResult.source}` : '')
     );
 
-    // 完成思考过程
-    completeThinkingProcess();
-
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
-    // 显示AI回答（在思考过程下方创建answer容器）
-    const bubble = currentAIBubble ? (currentAIBubble._bubble || currentAIBubble.querySelector('.message-bubble')) : null;
+    // 完成思考过程（打勾），此时才创建answer bubble
+    completeThinkingProcess();
+
+    // 思考完成后才创建bubble（之前是不显示的，避免空白色椭圆）
+    const bubble = createAnswerArea();
 
     if (bubble) {
-      // 创建回答内容容器（思考过程已经在bubble内部，回答放在其后）
-      const answerDiv = document.createElement('div');
-      answerDiv.className = 'ai-answer-content';
-      if (fastgptResult.isHtml) {
-        answerDiv.innerHTML = aiText;
-      } else {
-        answerDiv.innerHTML = renderMarkdown(aiText);
-      }
-      bubble.appendChild(answerDiv);
+      // 渲染markdown（markdown后可能有HTML标签，用淡入效果）
+      const renderedContent = fastgptResult.isHtml ? aiText : renderMarkdown(aiText);
+      const isRichContent = fastgptResult.isHtml || (aiText.includes('#') || aiText.includes('**') || aiText.includes('- ') || aiText.includes('1.') || aiText.includes('['));
 
-      // 如果使用了FastGPT知识库或OA流程，显示来源标签
-      if (fastgptResult.sources && fastgptResult.sources.length > 0) {
-        showRAGSourceTag(bubble, fastgptResult.sources);
-      } else if (fastgptResult.routeType === 'oa_process') {
-        showRAGSourceTag(bubble, [{ title: 'OA流程数据库' }]);
-      } else if (fastgptResult.usedFastGPT) {
-        showRAGSourceTag(bubble, [{ title: '公司知识库' }]);
+      if (isRichContent) {
+        // 富文本（markdown渲染后有HTML）- 直接淡入
+        bubble.style.opacity = '0';
+        bubble.innerHTML = renderedContent;
+        bubble.style.transition = 'opacity 0.3s ease';
+        requestAnimationFrame(() => { bubble.style.opacity = '1'; });
+      } else {
+        // 纯文本 - 打字机流式效果
+        typeWriterEffect(bubble, aiText, false, () => {
+          const container = document.getElementById('chatContainer');
+          if (container) container.scrollTop = container.scrollHeight;
+        });
+      }
+
+      // 如果使用了FastGPT知识库或OA流程，显示来源标签（追加到bubble后面，作为msgContent子元素）
+      const msgContent = currentAIBubble ? (currentAIBubble._content || currentAIBubble.querySelector('.message-content')) : null;
+      if (msgContent) {
+        if (fastgptResult.sources && fastgptResult.sources.length > 0) {
+          appendSourceTag(msgContent, fastgptResult.sources);
+        } else if (fastgptResult.routeType === 'oa_process') {
+          appendSourceTag(msgContent, [{ title: 'OA流程数据库' }]);
+        } else if (fastgptResult.usedFastGPT) {
+          appendSourceTag(msgContent, [{ title: '公司知识库' }]);
+        }
       }
     } else {
-      console.error('[sendMessage] ❌ 找不到AI回答bubble，currentAIBubble:', currentAIBubble);
+      console.error('[sendMessage] ❌ createAnswerArea返回null，currentAIBubble:', currentAIBubble);
     }
 
     chatHistory.push({ role: 'assistant', content: aiText });
@@ -3149,6 +3233,23 @@ function showRAGSourceTag(bubbleElement, sources) {
   }
 
   bubbleElement.appendChild(tag);
+}
+
+// 把来源标签追加到msgContent（bubble后面），确保block换行布局
+function appendSourceTag(msgContent, sources) {
+  if (!msgContent) return;
+
+  const tag = document.createElement('div');
+  tag.className = 'rag-source-tag';
+
+  if (sources && sources.length > 0) {
+    const sourceNames = sources.map(s => s.title || s.filename || s.name || '文档').slice(0, 3).join(', ');
+    tag.textContent = `📚 来源: ${sourceNames}${sources.length > 3 ? ' 等' + sources.length + '篇' : ''}`;
+  } else {
+    tag.textContent = '📚 来自知识库';
+  }
+
+  msgContent.appendChild(tag);
 }
 
 function formatPageContent(content) {
