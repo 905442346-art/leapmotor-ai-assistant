@@ -2587,17 +2587,16 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
           routeType: 'system'
         };
       } else {
-        // 知识库查询失败，回退到主模型
-        console.warn('[四路路由] ⚠️ 知识库查询失败:', fastgptResult.error);
-        addMessage('ai', `⚠️ 公司知识库暂时无法回答: ${fastgptResult.error}\n\n已切换到通用AI模式继续回答...`);
+        // 知识库查询失败，回退到主模型（不插入额外消息避免重复）
+        console.warn('[四路路由] ⚠️ 知识库查询失败，回退到主AI模型:', fastgptResult.error);
 
         // 回退时作为通用问答处理（不传页面内容）
         const fallbackResult = await callMainModel(userMessage, null);
         return {
           text: fallbackResult || '（AI未返回有效内容）',
-          source: 'ai_model',
+          source: 'ai_model_fallback',
           usedFastGPT: false,
-          routeType: 'general_chat_fallback'
+          routeType: 'general_chat'
         };
       }
 
@@ -2812,6 +2811,7 @@ async function callMainModel(prompt, contextContent) {
 // ========== 发送消息 ==========
 // ========== AI思考过程管理器 ==========
 let currentThinkingProcess = null;
+let currentAIBubble = null;
 
 /**
  * 创建并显示思考过程容器
@@ -2823,20 +2823,28 @@ function showThinkingProcess(messageId) {
   if (welcomeScreen) welcomeScreen.style.display = 'none';
   if (messageList) messageList.classList.add('has-messages');
 
-  // 从模板克隆
+  // 先创建AI气泡（空内容）
+  const aiBubble = addMessage('ai', '', true);
+  // aiBubble 是 .message.ai 元素
+  // 其内部结构：.message-avatar + .message-content > .message-bubble（空）
+  const msgContent = aiBubble.querySelector('.message-content');
+  const bubble = aiBubble.querySelector('.message-bubble');
+
+  // 从模板克隆思考过程
   const template = document.getElementById('thinkingProcessTemplate');
-  if (!template) return null;
+  if (!template || !msgContent || !bubble) return null;
 
   const thinkingEl = template.content.cloneNode(true).querySelector('.thinking-process');
   thinkingEl.dataset.thinkingId = messageId;
 
-  // 插入到消息列表末尾
-  messageList.appendChild(thinkingEl);
+  // 将思考过程插入到 .message-content 中，bubble之前（即消息气泡上方）
+  msgContent.insertBefore(thinkingEl, bubble);
 
   // 自动展开（默认）
   setTimeout(() => thinkingEl.classList.add('expanded'), 100);
 
   currentThinkingProcess = thinkingEl;
+  currentAIBubble = aiBubble;
   return thinkingEl;
 }
 
@@ -2933,29 +2941,20 @@ async function sendMessage() {
   // 生成唯一消息ID用于关联思考过程
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-  // 显示思考过程容器
-  const thinkingEl = showThinkingProcess(messageId);
-  if (thinkingEl) {
-    // 步骤1：开始分析用户意图
-    addThinkingStep('detect', '正在分析您的问题意图...');
-  }
+  // ===== 第一步：纯计算（不操作DOM）=====
 
-  // 【重要修复】步骤1.5：优先进行意图检测，决定是否需要抓取页面
+  // 优先进行意图检测，决定是否需要抓取页面
   const quickIntent = detectIntentThreeWay(text);
-  const needPageContent = quickIntent.type === 'page_analysis';  // 只有页面分析才需要抓取
+  const needPageContent = quickIntent.type === 'page_analysis';
 
   console.log(`[sendMessage] 🚦 意图检测: ${quickIntent.type}, 需要页面内容: ${needPageContent}`);
 
   // 获取页面内容（仅在需要时抓取）
   if (activePageId === 'current' && needPageContent) {
-
-    // 主动抓取当前页面内容（如果没有预先抓取）
     const currentPageInCaptured = capturedPages.find(p => p.id === activePageId || p.id?.startsWith('page_'));
 
     if (!currentPageInCaptured) {
       console.log('[sendMessage] 📡 正在主动抓取当前页面内容...');
-      addThinkingStep('fetch', '正在抓取当前浏览器标签页内容...');
-
       try {
         const pageContent = await new Promise((resolve) => {
           window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
@@ -2982,17 +2981,14 @@ async function sendMessage() {
           updateCurrentPageInfo({ title: pageContent.title });
           messageText += `\n\n[已自动抓取当前页面]`;
           console.log('[sendMessage] ✅ 当前页面内容抓取成功:', pageContent.title);
-          addThinkingStep('success', `✅ 成功抓取页面: ${pageContent.title}`);
         } else {
           console.warn('[sendMessage] ⚠️ 当前页面内容为空');
-          addThinkingStep('detect', '⚠️ 无法获取当前页面内容');
         }
       } catch (error) {
         console.error('[sendMessage] ❌ 抓取页面失败:', error);
-        addThinkingStep('error', `页面抓取失败: ${error.message}`);
       }
     }
-  }  // 【关键修复】关闭 if (activePageId === 'current' && needPageContent)
+  }
 
   if (capturedPages.length > 0) {
     const allContent = capturedPages.map((c, i) =>
@@ -3011,6 +3007,9 @@ async function sendMessage() {
     messageText += `\n\n[已上传 ${uploadedFiles.length} 个文件]`;
   }
 
+  // ===== 第二步：DOM操作（按正确顺序添加消息）=====
+
+  // 先添加用户消息
   addMessage('user', messageText);
   chatHistory.push({ role: 'user', content: messageText });
 
@@ -3020,7 +3019,16 @@ async function sendMessage() {
   renderFilePreview();
   updateSendButton();
 
-  addTypingIndicator();
+  // 再创建AI气泡（思考过程嵌入气泡顶部）
+  const thinkingEl = showThinkingProcess(messageId);
+  if (thinkingEl) {
+    // 步骤1：开始分析用户意图
+    addThinkingStep('detect', '正在分析您的问题意图...');
+    // 页面抓取步骤（如果已抓取）
+    if (needPageContent && contextContent) {
+      addThinkingStep('success', '✅ 已成功抓取页面内容');
+    }
+  }
 
   try {
     // 步骤2：显示识别到的意图（使用前面已检测的结果）
@@ -3069,28 +3077,34 @@ async function sendMessage() {
 
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
-    // 显示AI回答（isHtml=true时直接设置innerHTML，不经过renderMarkdown）
-    const bubble = addMessage('ai', '', true);
-    if (fastgptResult.isHtml) {
-      bubble.innerHTML = aiText;
-    } else {
-      updateLastMessage(aiText);
-    }
+    // 显示AI回答（复用showThinkingProcess已创建的气泡）
+    const bubble = currentAIBubble ? currentAIBubble.querySelector('.message-bubble') : null;
 
-    // 如果使用了FastGPT知识库或OA流程，显示来源标签
-    if (fastgptResult.sources && fastgptResult.sources.length > 0) {
-      showRAGSourceTag(bubble, fastgptResult.sources);
-    } else if (fastgptResult.routeType === 'oa_process') {
-      showRAGSourceTag(bubble, [{ title: 'OA流程数据库' }]);
-    } else if (fastgptResult.usedFastGPT) {
-      showRAGSourceTag(bubble, [{ title: '公司知识库' }]);
+    if (bubble) {
+      if (fastgptResult.isHtml) {
+        bubble.innerHTML = aiText;
+      } else {
+        bubble.innerHTML = renderMarkdown(aiText);
+      }
+
+      // 如果使用了FastGPT知识库或OA流程，显示来源标签
+      if (fastgptResult.sources && fastgptResult.sources.length > 0) {
+        showRAGSourceTag(currentAIBubble, fastgptResult.sources);
+      } else if (fastgptResult.routeType === 'oa_process') {
+        showRAGSourceTag(currentAIBubble, [{ title: 'OA流程数据库' }]);
+      } else if (fastgptResult.usedFastGPT) {
+        showRAGSourceTag(currentAIBubble, [{ title: '公司知识库' }]);
+      }
     }
 
     chatHistory.push({ role: 'assistant', content: aiText });
     setStatus('就绪');
 
-    // 延迟重置当前思考过程引用（允许下次发送新消息时创建新的）
-    setTimeout(() => { currentThinkingProcess = null; }, 500);
+    // 延迟重置引用
+    setTimeout(() => {
+      currentThinkingProcess = null;
+      currentAIBubble = null;
+    }, 500);
 
   } catch (error) {
     removeTypingIndicator();
