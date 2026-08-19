@@ -2193,7 +2193,9 @@ async function handleOAProcessQuery(userMessage) {
     const apiUrl = `https://lppms.leapmotor.com/pmapi/ufOAWorkFlow/collectOAProcess?number=${employeeId}`;
     console.log(`[OA流程查询] 📡 正在调用接口: ${apiUrl}`);
 
-    let processList;
+    let rawData;  // 保存原始返回数据用于调试
+    let categoryList;  // 原始分类数据
+    let processList = [];  // 扁平化后的流程列表
     try {
       // 尝试直连调用
       const response = await fetch(apiUrl);
@@ -2201,15 +2203,22 @@ async function handleOAProcessQuery(userMessage) {
         throw new Error(`HTTP ${response.status}`);
       }
       const data = await response.json();
-      processList = data.data || data;
+      rawData = data;  // 保存原始数据
+      categoryList = data.data || data;
       console.log(`[OA流程查询] ✅ 直连成功，获取到数据`);
+      console.log(`[OA流程查询] 🔍 响应状态:`, data.code, data.msg);
     } catch (directError) {
       console.log(`[OA流程查询] ⚠️ 直连失败，尝试代理模式:`, directError.message);
       // 直连失败，尝试通过background.js代理调用
-      processList = await fetchOAProcessViaProxy(employeeId);
+      // 代理返回格式: { success: true, data: { code:200, data:[分类数组] } }
+      const proxyResult = await fetchOAProcessViaProxy(employeeId);
+      rawData = proxyResult;
+      // 代理返回的数据结构与直连一致，都是 {code, msg, status, data: [分类数组]}
+      categoryList = (proxyResult && proxyResult.data) ? proxyResult.data.data || proxyResult.data : proxyResult;
     }
 
-    if (!processList || !Array.isArray(processList) || processList.length === 0) {
+    if (!categoryList || !Array.isArray(categoryList) || categoryList.length === 0) {
+      console.error('[OA流程查询] ❌ 数据为空或格式错误:', { rawData, categoryList });
       return {
         text: '📋 **暂无可发起的OA流程**\n\n当前账号可能没有待办流程或权限不足。如需帮助，请咨询人事部门或IT支持。',
         source: 'oa_process_empty',
@@ -2218,16 +2227,73 @@ async function handleOAProcessQuery(userMessage) {
       };
     }
 
-    console.log(`[OA流程查询] ✅ 成功获取 ${processList.length} 个流程`);
+    // 【关键修复】扁平化嵌套结构：遍历每个分类，提取其中的 weaverCreateWorkFlowDTOS 流程数组
+    // 根据用户提供的API返回结构：
+    // data[].typeName = 分类名（如"流程与IT管理类"、"行政与运营类"）
+    // data[].weaverCreateWorkFlowDTOS[] = 该分类下的流程数组
+    //   ├─ workflowName: "APP单车及开店后台权限申请流程"
+    //   ├─ workflowDesc: "适用于全公司申请APP绑车及车机开启后台权限的审批"
+    //   └─ workflowUrl: "http://oa.leapmotor.com:80/spa/workflow/static4form/..."
+    categoryList.forEach(category => {
+      const categoryName = category.typeName || category.workflowTypeName || '未分类';
+      const subFlows = category.weaverCreateWorkFlowDTOS || category.flows || [];
 
-    // 使用正确的字段映射（根据真实API返回）
-    // typeName: 流程类型, workflowName: 流程名称, workflowDesc: 流程描述
-    // workflowUrl/requrl/createWorkflowId: 流程发起链接
+      if (Array.isArray(subFlows)) {
+        subFlows.forEach(flow => {
+          // 为每个流程注入所属分类名（方便后续使用）
+          processList.push({
+            ...flow,
+            _category: categoryName  // 内部使用，打上分类标签
+          });
+        });
+      }
+    });
+
+    if (processList.length === 0) {
+      console.error('[OA流程查询] ❌ 扁平化后流程列表为空，原始分类列表结构:', categoryList);
+      console.error('[OA流程查询] ❌ 第1个分类的keys:', Object.keys(categoryList[0] || {}));
+      return {
+        text: '📋 **暂无可发起的OA流程**\n\n未找到可发起的流程，请稍后再试或联系IT支持。',
+        source: 'oa_process_empty',
+        usedFastGPT: false,
+        routeType: 'oa_process'
+      };
+    }
+
+    console.log(`[OA流程查询] ✅ 成功获取 ${categoryList.length} 个分类，共 ${processList.length} 个流程`);
+
+    // 【调试】输出第一个流程的完整字段
+    const firstProcess = processList[0];
+    console.log(`[OA流程查询] 📋 第1个流程完整字段:`, firstProcess);
+    console.log(`[OA流程查询] 📋 第1个流程所有keys:`, Object.keys(firstProcess));
+
+    // 【关键修复】使用截图中确认的准确字段：
+    // ✅ workflowName: 流程名称（如"APP单车及开店后台权限申请流程"）
+    // ✅ workflowDesc: 流程描述（不是wfDesc！）
+    // ✅ workflowUrl: 流程发起链接（不是authUrl！）
+    // ✅ _category: 我们注入的分类名（来自外层typeName）
     const processText = processList.map((item, index) => {
-      const type = item.typeName || item.workflowTypeName || '未分类';
-      const name = item.workflowName || item.name || '未知流程';
-      const desc = item.workflowDesc || item.description || '';
-      const url = item.workflowUrl || item.requrl || item.createWorkflowId || '';
+      // 流程分类：优先使用注入的_category，其次自身的workflowTypeName/typeName
+      const type = item._category || item.workflowTypeName || item.typeName || '未分类';
+
+      // 流程名称：workflowName（截图确认）
+      const name = item.workflowName || item.name || `流程${index + 1}`;
+
+      // 流程描述：workflowDesc（截图确认）
+      const desc = item.workflowDesc || item.wfDesc || item.description || '';
+
+      // 流程链接：workflowUrl（截图确认！格式如 http://oa.leapmotor.com:80/spa/workflow/static4form/...）
+      const url = item.workflowUrl || item.authUrl || item.requrl || '';
+
+      // 【调试】前5个流程和关键词相关流程输出详情
+      if (index < 5 || name.includes('用印') || name.includes('印章') || name.includes('盖章')) {
+        console.log(`[OA流程查询] 🔍 流程${index + 1} [${type}]:`, {
+          name,
+          hasUrl: !!url,
+          urlPreview: url ? url.substring(0, 80) + '...' : '(空)'
+        });
+      }
+
       const urlPart = url ? `\n   🔗 发起链接: ${url}` : '';
       return `${index + 1}. [${type}] **${name}${desc ? ' - ' + desc : ''}**${urlPart}`;
     }).join('\n');
@@ -2235,69 +2301,139 @@ async function handleOAProcessQuery(userMessage) {
     // 按流程类型分组统计
     const typeCount = {};
     processList.forEach(item => {
-      const type = item.typeName || item.workflowTypeName || '未分类';
+      const type = item._category || item.workflowTypeName || item.typeName || '未分类';
       typeCount[type] = (typeCount[type] || 0) + 1;
     });
     const typeSummary = Object.entries(typeCount)
       .map(([type, count]) => `${type}: ${count}个`)
       .join('、');
 
-    // 构建智能AI提示词
-    const systemPrompt = `你是零跑汽车公司的智能流程咨询助手。根据以下可发起的OA审批流程数据库，精准回答用户的流程相关问题。
+    // 构建精简流程清单（给AI看的，不带链接，只带索引+名称+分类+描述）
+    const processListForAI = processList.map((item, index) => {
+      const name = item.workflowName || '';
+      const category = item._category || '';
+      const desc = (item.workflowDesc || '').substring(0, 80);
+      return `${index + 1}. [${category}] ${name} - ${desc}`;
+    }).join('\n');
 
-## 📊 当前账号可发起的流程概览
-共 ${processList.length} 个流程（${typeSummary}）
+    // AI提示词：只返回推荐的流程序号（JSON格式），不生成链接
+    const systemPrompt = [
+      '你是零跑汽车OA流程推荐助手。根据用户问题，从流程清单中推荐最匹配的1-3个流程。',
+      '',
+      '## 输出要求（极其重要）',
+      '你必须严格返回JSON格式，不要输出任何其他文字、解释、Markdown格式。',
+      '',
+      '## JSON格式：',
+      '{"matches":[{"index":流程序号(数字，从1开始),"reason":"推荐理由一句话"}, ...最多3个]}',
+      '',
+      '## 流程清单（共' + processList.length + '个）：',
+      processListForAI,
+      '',
+      '## 规则：',
+      '1. index必须是上面清单中的序号（1-based）',
+      '2. 最多推荐3个，按相关性排序',
+      '3. 如果完全不相关的问题，返回 {"matches":[]}',
+      '4. reason简短说明为什么推荐，15字以内',
+      '',
+      '用户问题：' + userMessage
+    ].join('\n');
 
-## 📋 完整流程清单（含发起链接）
-${processText}
+    // 调用AI获取推荐索引
+    setStatus('正在智能匹配流程...', 'loading');
+    let recommendedIndexes = [];
+    try {
+      const aiResult = await callMainModelWithContext(userMessage, null, systemPrompt);
+      console.log('[OA流程查询] 🤖 AI原始返回:', aiResult);
 
-## ⚠️ 重要：必须返回流程发起链接！
+      // 解析JSON
+      const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.matches && Array.isArray(parsed.matches)) {
+          recommendedIndexes = parsed.matches
+            .map(m => ({ idx: parseInt(m.index) - 1, reason: m.reason || '' }))
+            .filter(m => m.idx >= 0 && m.idx < processList.length);
+        }
+      }
+      console.log('[OA流程查询] ✅ AI推荐索引:', recommendedIndexes);
+    } catch (parseErr) {
+      console.warn('[OA流程查询] ⚠️ AI解析失败，降级到关键词匹配:', parseErr.message);
+    }
 
-## 🎯 回答规范（严格执行）
-1. **精准匹配**：根据用户描述（如"新电脑"、"请病假"、"报销"等），从列表中找出最相关的1-3个流程
-2. **必须提供链接**：每个推荐的流程都必须附上🔗发起链接，方便用户一键直达
-3. **清晰指引**：明确告诉用户流程名称、分类和用途
-4. **友好建议**：如果多个相似流程，帮助用户选择最合适的
-5. **兜底处理**：如果找不到相关流程，礼貌建议联系相关部门
+    // 如果AI没返回结果，降级为本地关键词匹配
+    if (recommendedIndexes.length === 0) {
+      const keywords = userMessage.toLowerCase();
+      const scored = processList.map((item, idx) => {
+        const name = (item.workflowName || '').toLowerCase();
+        const desc = (item.workflowDesc || '').toLowerCase();
+        const category = (item._category || '').toLowerCase();
+        let score = 0;
+        // 简单关键词匹配
+        if (name.includes('用印') || name.includes('印章') || name.includes('盖章')) score += 10;
+        if (desc.includes('用印') || desc.includes('印章') || desc.includes('盖章')) score += 5;
+        if (keywords.includes('用印') && (name.includes('用印') || name.includes('印章'))) score += 20;
+        if (keywords.includes('请假') && name.includes('请假')) score += 20;
+        if (keywords.includes('报销') && name.includes('报销')) score += 20;
+        if (keywords.includes('电脑') && (name.includes('电脑') || name.includes('it设备') || name.includes('资产'))) score += 20;
+        if (keywords.includes('会议室') && name.includes('会议')) score += 20;
+        if (keywords.includes('门禁') && (name.includes('门禁') || name.includes('卡'))) score += 20;
+        if (name.includes('申请')) score += 1;
+        return { idx, score };
+      }).filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
+      recommendedIndexes = scored.map(s => ({ idx: s.idx, reason: '关键词匹配' }));
+      console.log('[OA流程查询] 🔍 降级匹配结果:', recommendedIndexes);
+    }
 
-## ✅ 正确的回答格式示例
-> 根据您的需求"申请新电脑"，推荐您走以下流程：
->
-> **【IT资产申请流程】**
-> - 分类: 流程与IT管理类
-> - 说明: 用于申请新电脑、显示器等IT设备
-> - 🔗 **点击这里立即发起**: https://oa.leapmotor.com/spa/workflow/staticform/index.html?rdm=xxxxx
->
-> 如果还有其他疑问，可以继续问我~
+    // 根据推荐索引构建液态玻璃卡片HTML（前端直接渲染，确保链接可点击）
+    if (recommendedIndexes.length > 0) {
+      let cardsHtml = '<div class="oa-recommend">';
+      cardsHtml += '<div class="oa-recommend-title">💡 为您找到相关流程：</div>';
 
-## ❌ 错误的回答格式（不要这样）
-> 您需要登录OA系统 → 工作台 → 搜索"IT资产申请"
-> （这种回答没有直接给链接，用户体验差）`;
+      recommendedIndexes.forEach((rec, i) => {
+        const flow = processList[rec.idx];
+        const name = escapeHtml(flow.workflowName || '未知流程');
+        const category = escapeHtml(flow._category || flow.workflowTypeName || '未分类');
+        const desc = escapeHtml(flow.workflowDesc || '');
+        const url = flow.workflowUrl || '';
+        const shortDesc = desc.length > 60 ? desc.substring(0, 60) + '...' : desc;
 
-    // 调用AI生成智能回答
-    setStatus('正在智能分析匹配流程...', 'loading');
-    const aiAnswer = await callMainModelWithContext(userMessage, null, systemPrompt);
+        if (url) {
+          cardsHtml += '<div class="oa-card">';
+          cardsHtml += '<div class="oa-card-header">';
+          cardsHtml += '<div class="oa-card-name">' + name + '</div>';
+          cardsHtml += '<span class="oa-card-category">' + category + '</span>';
+          cardsHtml += '</div>';
+          if (shortDesc) {
+            cardsHtml += '<div class="oa-card-desc">' + shortDesc + '</div>';
+          }
+          cardsHtml += '<a class="oa-card-btn" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">';
+          cardsHtml += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+          cardsHtml += '立即发起';
+          cardsHtml += '</a>';
+          cardsHtml += '</div>';
+        }
+      });
 
-    if (!aiAnswer) {
-      // AI调用失败，返回结构化的流程列表
+      cardsHtml += '</div>';
+
       return {
-        text: `📋 **为您找到 ${processList.length} 个可发起的流程：**\n\n${processText}\n\n💡 您可以直接告诉我更具体的需求，我会帮您推荐最合适的流程。`,
-        source: 'oa_process_list',
+        text: cardsHtml,
+        isHtml: true,  // 标记为HTML内容，绕过renderMarkdown
+        source: 'oa_process_cards',
         sources: [
-          { title: `OA流程数据库 (${processList.length}个)` },
-          { title: `分类: ${typeSummary}` }
+          { title: 'OA流程智能推荐' }
         ],
         usedFastGPT: false,
         routeType: 'oa_process'
       };
     }
 
+    // 没有找到匹配的流程
     return {
-      text: aiAnswer,
-      source: 'oa_process_ai',
+      text: '抱歉，没有找到与"' + escapeHtml(userMessage) + '"直接相关的流程。\n\n💡 您可以点击侧边栏📋按钮查看所有流程列表，或者尝试更具体的关键词（如"请假"、"报销"、"电脑"等）。',
+      source: 'oa_process_nomatch',
       sources: [
-        { title: `OA流程智能推荐` },
-        { title: `共${processList.length}个流程可用` }
+        { title: 'OA流程数据库' }
       ],
       usedFastGPT: false,
       routeType: 'oa_process'
@@ -2362,19 +2498,40 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
     return await callMainModel(userMessage, contextContent);
   }
 
-  // ========== 第一步：意图识别 ==========
+  // ========== 第一步：意图识别（关键词优先 + AI补充） ==========
   setStatus('正在分析问题类型...', 'loading');
 
   let intent;
-  try {
-    // 优先使用AI判断（三路分类）
-    intent = await detectIntentWithAI(userMessage);
-    console.log('[三路路由] AI意图识别结果:', intent);
-  } catch (e) {
-    // AI判断失败，回退到关键词匹配
-    console.warn('[三路路由] AI意图识别失败，回退到关键词匹配:', e);
-    intent = detectIntentThreeWay(userMessage);
-    console.log('[三路路由] 关键词意图识别结果:', intent);
+
+  // 【修复】优先使用关键词匹配（快速且准确）
+  const keywordIntent = detectIntentThreeWay(userMessage);
+  console.log('[四路路由] 🔍 关键词意图识别结果:', keywordIntent);
+
+  // 判断是否应该直接使用关键词结果（高置信度场景）
+  const isHighConfidenceOA = keywordIntent.type === 'oa_process' && keywordIntent.confidence >= 0.8;
+  const isHighConfidenceAnalysis = keywordIntent.type === 'page_analysis';
+  const isHighConfidenceSystem = keywordIntent.type === 'system' && keywordIntent.confidence >= 0.7;
+
+  if (isHighConfidenceOA || isHighConfidenceAnalysis || isHighConfidenceSystem) {
+    // 高置信度场景：直接使用关键词结果，跳过AI判断
+    intent = keywordIntent;
+    console.log('[四路路由] ✅ 使用关键词结果（高置信度）:', intent);
+  } else {
+    // 低置信度场景：调用AI辅助判断
+    try {
+      intent = await detectIntentWithAI(userMessage);
+      console.log('[四路路由] 🤖 AI意图识别结果:', intent);
+
+      // 【重要】如果AI判断结果与关键词冲突，且关键词是OA流程，优先信任关键词
+      if (keywordIntent.type === 'oa_process' && intent.type !== 'oa_process') {
+        console.warn('[四路路由] ⚠️ AI与关键词冲突，优先使用关键词结果（OA流程）');
+        intent = keywordIntent;
+      }
+    } catch (e) {
+      // AI判断失败，回退到关键词匹配
+      console.warn('[四路路由] AI意图识别失败，回退到关键词匹配:', e);
+      intent = keywordIntent;
+    }
   }
 
   // ========== 第二步：根据类型分发 ==========
@@ -2382,12 +2539,12 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
 
     // ====== 路由0：OA流程查询 → 调用OA接口 + AI回答 ======
     case 'oa_process':
-      console.log('[三路路由] 📋 路由到【OA流程查询】 → 自动调用OA接口');
+      console.log('[四路路由] 📋 路由到【OA流程查询】 → 自动调用OA接口');
       return await handleOAProcessQuery(userMessage);
 
     // ====== 路由1：系统问题 → FastGPT知识库 ======
     case 'system':
-      console.log(`[三路路由] 📋 路由到【系统问题】${intent.systemType ? '(' + intent.systemType + ')' : ''} → FastGPT工作流`);
+      console.log(`[四路路由] 📋 路由到【系统问题】${intent.systemType ? '(' + intent.systemType + ')' : ''} → FastGPT工作流`);
       setStatus('正在查询公司知识库...', 'loading');
 
       const fastgptResult = await callFastGPT(userMessage);
@@ -2403,7 +2560,7 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
         };
       } else {
         // 知识库查询失败，回退到主模型
-        console.warn('[三路路由] ⚠️ 知识库查询失败:', fastgptResult.error);
+        console.warn('[四路路由] ⚠️ 知识库查询失败:', fastgptResult.error);
         addMessage('ai', `⚠️ 公司知识库暂时无法回答: ${fastgptResult.error}\n\n已切换到通用AI模式继续回答...`);
 
         // 回退时作为通用问答处理（不传页面内容）
@@ -2418,13 +2575,13 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
 
     // ====== 路由2：页面分析 → 主AI + 页面内容 ======
     case 'page_analysis':
-      console.log('[三路路由] 🔍 路由到【页面分析】 → 主AI模型（含页面上下文）');
+      console.log('[四路路由] 🔍 路由到【页面分析】 → 主AI模型（含页面上下文）');
       setStatus('正在分析页面内容...', 'loading');
 
       const analysisResult = await callMainModel(userMessage, contextContent || '');
 
       if (!analysisResult || typeof analysisResult !== 'string') {
-        console.warn('[三路路由] 页面分析返回无效内容');
+        console.warn('[四路路由] 页面分析返回无效内容');
         return { text: '（页面分析未返回有效内容）', source: 'ai_model', usedFastGPT: false, routeType: 'page_analysis' };
       }
 
@@ -2438,13 +2595,13 @@ async function processMessageWithFastGPT(userMessage, contextContent) {
     // ====== 路由3：通用问答 → 主AI（联网查询，无页面内容）=====
     case 'general_chat':
     default:
-      console.log('[三路路由] 💬 路由到【通用问答】 → 主AI模型（联网模式）');
+      console.log('[四路路由] 💬 路由到【通用问答】 → 主AI模型（联网模式）');
       setStatus('正在搜索相关信息...', 'loading');
 
       const chatResult = await callMainModel(userMessage, null);  // 不传页面内容
 
       if (!chatResult || typeof chatResult !== 'string') {
-        console.warn('[三路路由] 通用问答返回无效内容');
+        console.warn('[四路路由] 通用问答返回无效内容');
         return { text: '（AI未返回有效内容）', source: 'ai_model', usedFastGPT: false, routeType: 'general_chat' };
       }
 
@@ -2755,8 +2912,14 @@ async function sendMessage() {
     addThinkingStep('detect', '正在分析您的问题意图...');
   }
 
-  // 获取页面内容
-  if (activePageId === 'current') {
+  // 【重要修复】步骤1.5：优先进行意图检测，决定是否需要抓取页面
+  const quickIntent = detectIntentThreeWay(text);
+  const needPageContent = quickIntent.type === 'page_analysis';  // 只有页面分析才需要抓取
+
+  console.log(`[sendMessage] 🚦 意图检测: ${quickIntent.type}, 需要页面内容: ${needPageContent}`);
+
+  // 获取页面内容（仅在需要时抓取）
+  if (activePageId === 'current' && needPageContent) {
 
     // 主动抓取当前页面内容（如果没有预先抓取）
     const currentPageInCaptured = capturedPages.find(p => p.id === activePageId || p.id?.startsWith('page_'));
@@ -2801,6 +2964,7 @@ async function sendMessage() {
         addThinkingStep('error', `页面抓取失败: ${error.message}`);
       }
     }
+  }  // 【关键修复】关闭 if (activePageId === 'current' && needPageContent)
 
   if (capturedPages.length > 0) {
     const allContent = capturedPages.map((c, i) =>
@@ -2831,8 +2995,7 @@ async function sendMessage() {
   addTypingIndicator();
 
   try {
-    // 步骤2：显示识别到的意图（在调用前先做一次快速检测）
-    const quickIntent = detectIntentThreeWay(text);
+    // 步骤2：显示识别到的意图（使用前面已检测的结果）
     const routeInfo = getRouteDisplayInfo(quickIntent.type);
 
     // 更新思考步骤：显示路由决策
@@ -2878,9 +3041,13 @@ async function sendMessage() {
 
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
-    // 显示AI回答
+    // 显示AI回答（isHtml=true时直接设置innerHTML，不经过renderMarkdown）
     const bubble = addMessage('ai', '', true);
-    updateLastMessage(aiText);
+    if (fastgptResult.isHtml) {
+      bubble.innerHTML = aiText;
+    } else {
+      updateLastMessage(aiText);
+    }
 
     // 如果使用了FastGPT知识库或OA流程，显示来源标签
     if (fastgptResult.sources && fastgptResult.sources.length > 0) {
@@ -2912,7 +3079,6 @@ async function sendMessage() {
     setStatus('错误', 'error');
     setTimeout(() => setStatus('就绪'), 3000);
   }
-}
 }
 
 /**
@@ -4153,19 +4319,19 @@ async function loadOAProcessList() {
     const data = await response.json();
     console.log('[OA流程] ✅ 获取到数据:', data);
 
-    // 解析返回的数据格式（根据实际API响应调整）
+    // 【修复】正确解析嵌套结构：data.data = 分类数组，每个分类含 weaverCreateWorkFlowDTOS
     let processList = [];
+    const categoryList = data.data || data;
 
-    if (Array.isArray(data)) {
-      processList = data;
-    } else if (data && Array.isArray(data.data)) {
-      processList = data.data;
-    } else if (data && data.list && Array.isArray(data.list)) {
-      processList = data.list;
-    } else if (data && typeof data === 'object') {
-      // 尝试从对象中提取数组
-      Object.values(data).forEach(val => {
-        if (Array.isArray(val)) processList = val;
+    if (Array.isArray(categoryList)) {
+      categoryList.forEach(category => {
+        const categoryName = category.typeName || category.workflowTypeName || '未分类';
+        const subFlows = category.weaverCreateWorkFlowDTOS || [];
+        if (Array.isArray(subFlows)) {
+          subFlows.forEach(flow => {
+            processList.push({ ...flow, _category: categoryName });
+          });
+        }
       });
     }
 
@@ -4183,7 +4349,21 @@ async function loadOAProcessList() {
       try {
         const proxyResult = await fetchOAProcessViaProxy(employeeId);
         if (proxyResult.success) {
-          showOAModalState('list', proxyResult.data);
+          // 代理返回 proxyResult.data = 完整响应 {code, msg, data:[分类数组]}
+          let proxyProcessList = [];
+          const proxyCategoryList = proxyResult.data.data || proxyResult.data || [];
+          if (Array.isArray(proxyCategoryList)) {
+            proxyCategoryList.forEach(category => {
+              const categoryName = category.typeName || category.workflowTypeName || '未分类';
+              const subFlows = category.weaverCreateWorkFlowDTOS || [];
+              if (Array.isArray(subFlows)) {
+                subFlows.forEach(flow => {
+                  proxyProcessList.push({ ...flow, _category: categoryName });
+                });
+              }
+            });
+          }
+          showOAModalState('list', proxyProcessList);
         } else {
           showOAModalState('error', proxyResult.error || '通过代理获取失败');
         }
@@ -4245,16 +4425,20 @@ function renderOAProcessList(processList) {
   }
 
   listContainer.innerHTML = processList.map((process, index) => {
-    // 根据实际API返回的字段名调整
-    const name = process.name || process.processName || process.title || process.workflowName || '未命名流程';
-    const desc = process.description || process.desc || process.remark || '';
-    const id = process.id || process.processId || process.workflowId || index;
-    const url = process.url || process.link || process.formUrl || '';
+    // 【修复】使用API返回的正确字段：workflowName, workflowDesc, workflowUrl
+    const name = process.workflowName || process.name || '未命名流程';
+    const desc = process.workflowDesc || process.wfDesc || process.description || '';
+    const id = process.workflowId || process.id || index;
+    const url = process.workflowUrl || process.authUrl || process.url || '';
+
+    // 显示分类标签
+    const category = process._category || process.workflowTypeName || '';
 
     return `
-      <div class="oa-process-item" data-id="${id}" data-name="${name}" data-url="${url}">
+      <div class="oa-process-item" data-id="${id}" data-name="${escapeHtml(name)}" data-url="${escapeHtml(url)}">
         <div class="oa-process-info">
           <div class="oa-process-name">${escapeHtml(name)}</div>
+          ${category ? `<div style="font-size:11px;color:var(--accent-color-light,var(--accent));margin-bottom:4px;">${escapeHtml(category)}</div>` : ''}
           ${desc ? `<div class="oa-process-desc">${escapeHtml(desc)}</div>` : ''}
         </div>
         <svg class="oa-process-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

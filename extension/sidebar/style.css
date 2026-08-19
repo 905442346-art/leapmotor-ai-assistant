@@ -567,8 +567,10 @@ body {
   border-bottom: 1px solid var(--glass-border);
   animation: slideDown 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 9;
-  overflow-y: auto;
-  max-height: 60vh;
+  /* 【修复】移除外层滚动，避免嵌套滚动条 */
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes slideDown {
@@ -642,11 +644,26 @@ body {
   text-transform: uppercase;
 }
 
-/* Tab 内容区域 */
+/* Tab 内容区域 - 唯一滚动容器 */
 .settings-tabs-content {
   overflow-y: auto;
-  max-height: calc(60vh - 140px);
+  flex: 1; /* 【修复】填充剩余空间 */
+  min-height: 0; /* 允许flex子项收缩 */
   padding-right: 4px;
+  /* 【优化】使用自定义滚动条样式 */
+}
+
+.settings-tabs-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-tabs-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-tabs-content::-webkit-scrollbar-thumb {
+  background: var(--glass-border-bright);
+  border-radius: 3px;
 }
 
 .settings-tab-pane {
@@ -3518,4 +3535,141 @@ body {
   .arrow-icon {
     transform: rotate(90deg);
   }
+}
+
+/* ========== OA流程推荐卡片（液态玻璃风格） ========== */
+.oa-recommend {
+  margin: 8px 0;
+}
+
+.oa-recommend-title {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oa-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-glass), var(--shadow-inset);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.oa-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-border-bright), transparent);
+}
+
+.oa-card:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow), var(--shadow-glass);
+  transform: translateY(-2px);
+}
+
+.oa-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.oa-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+  flex: 1;
+}
+
+.oa-card-category {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  background: linear-gradient(135deg, var(--accent), var(--lp-green-bright));
+  color: var(--accent-text);
+  font-weight: 500;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.oa-card-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.oa-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent), var(--lp-green-bright));
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+.oa-card-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.oa-card-btn:active {
+  transform: scale(0.98);
+}
+
+.oa-card-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.oa-recommend-footer {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 8px;
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--glass-border);
+}
+
+/* 深色模式下微调卡片 */
+[data-theme="dark"] .oa-card-category {
+  background: linear-gradient(135deg, var(--accent-deep), var(--lp-green-bright));
+}
+
+[data-theme="light"] .oa-card {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme="light"] .oa-card:hover {
+  background: rgba(255, 255, 255, 0.85);
 }
