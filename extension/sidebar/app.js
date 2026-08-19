@@ -2828,23 +2828,20 @@ function showThinkingProcess(messageId) {
 
   // 先创建AI气泡（空内容）
   const aiMessageEl = addMessage('ai', '', true);
-  // aiMessageEl 是 .message.ai 外层元素
-  // 其内部结构：.message-avatar + .message-content > .message-bubble（空）
-  const msgContent = aiMessageEl._content || aiMessageEl.querySelector('.message-content');
   const bubble = aiMessageEl._bubble || aiMessageEl.querySelector('.message-bubble');
 
   // 从模板克隆思考过程
   const template = document.getElementById('thinkingProcessTemplate');
-  if (!template || !msgContent || !bubble) {
-    console.error('[showThinkingProcess] ❌ DOM元素查找失败:', { template: !!template, msgContent: !!msgContent, bubble: !!bubble });
+  if (!template || !bubble) {
+    console.error('[showThinkingProcess] ❌ DOM元素查找失败:', { template: !!template, bubble: !!bubble });
     return null;
   }
 
   const thinkingEl = template.content.cloneNode(true).querySelector('.thinking-process');
   thinkingEl.dataset.thinkingId = messageId;
 
-  // 将思考过程插入到 .message-content 中，bubble之前（即消息气泡上方）
-  msgContent.insertBefore(thinkingEl, bubble);
+  // 将思考过程插入到 bubble 内部最前面（确保垂直排列）
+  bubble.insertBefore(thinkingEl, bubble.firstChild);
 
   // 自动展开（默认）
   setTimeout(() => thinkingEl.classList.add('expanded'), 100);
@@ -3083,23 +3080,27 @@ async function sendMessage() {
 
     const aiText = fastgptResult.text || '（AI未返回内容）';
 
-    // 显示AI回答（复用showThinkingProcess已创建的气泡）
+    // 显示AI回答（在思考过程下方创建answer容器）
     const bubble = currentAIBubble ? (currentAIBubble._bubble || currentAIBubble.querySelector('.message-bubble')) : null;
 
     if (bubble) {
+      // 创建回答内容容器（思考过程已经在bubble内部，回答放在其后）
+      const answerDiv = document.createElement('div');
+      answerDiv.className = 'ai-answer-content';
       if (fastgptResult.isHtml) {
-        bubble.innerHTML = aiText;
+        answerDiv.innerHTML = aiText;
       } else {
-        bubble.innerHTML = renderMarkdown(aiText);
+        answerDiv.innerHTML = renderMarkdown(aiText);
       }
+      bubble.appendChild(answerDiv);
 
       // 如果使用了FastGPT知识库或OA流程，显示来源标签
       if (fastgptResult.sources && fastgptResult.sources.length > 0) {
-        showRAGSourceTag(currentAIBubble, fastgptResult.sources);
+        showRAGSourceTag(bubble, fastgptResult.sources);
       } else if (fastgptResult.routeType === 'oa_process') {
-        showRAGSourceTag(currentAIBubble, [{ title: 'OA流程数据库' }]);
+        showRAGSourceTag(bubble, [{ title: 'OA流程数据库' }]);
       } else if (fastgptResult.usedFastGPT) {
-        showRAGSourceTag(currentAIBubble, [{ title: '公司知识库' }]);
+        showRAGSourceTag(bubble, [{ title: '公司知识库' }]);
       }
     } else {
       console.error('[sendMessage] ❌ 找不到AI回答bubble，currentAIBubble:', currentAIBubble);

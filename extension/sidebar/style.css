@@ -1463,8 +1463,6 @@ body {
 .message-content {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .message-bubble {
@@ -2853,7 +2851,9 @@ body {
 
 /* ========== AI思考过程样式（FastGPT风格）========== */
 .thinking-process {
-  margin: 0 0 8px 0;
+  display: block;
+  width: 100%;
+  margin: 0 0 10px 0;
   border-radius: var(--radius-md);
   overflow: hidden;
   animation: thinkingFadeIn 0.3s ease;
@@ -2862,6 +2862,8 @@ body {
 }
 
 .ai-answer-content {
+  display: block;
+  width: 100%;
   line-height: 1.7;
   font-size: 14px;
   color: var(--text-primary);
