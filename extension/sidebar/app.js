@@ -5165,16 +5165,17 @@ function closeUpdateAvailableModal() {
 }
 
 /**
- * 开始下载更新
+ * 开始下载更新（使用真实fetch + ReadableStream下载并显示真实进度）
  */
-function startDownloadUpdate(updateData) {
+async function startDownloadUpdate(updateData) {
   if (!updateData || (!updateData.zipDownloadUrl && !updateData.downloadUrl)) {
     console.error('[在线更新] ⚠️ 无下载链接');
     showUpdateStatus('❌ 下载链接无效', 'error');
     return;
   }
 
-  console.log('[在线更新] 📥 开始下载更新...');
+  const downloadUrl = updateData.zipDownloadUrl || updateData.downloadUrl;
+  console.log('[在线更新] 📥 开始下载更新:', downloadUrl);
 
   // 关闭新版本弹窗
   closeUpdateAvailableModal();
@@ -5188,25 +5189,67 @@ function startDownloadUpdate(updateData) {
   if (verEl) verEl.textContent = updateData.version;
 
   const progressBar = progressModal ? progressModal.querySelector('.progress-fill') : null;
-  const statusText = progressModal ? progressModal.querySelector('.progress-status') : null;
+  const progressPercent = document.getElementById('downloadPercent');
+  const downloadedSizeEl = document.getElementById('downloadedSize');
+  const totalSizeEl = document.getElementById('totalSize');
+  const statusText = document.getElementById('downloadStatusText');
 
-  // 使用zip直链自动下载
-  const downloadUrl = updateData.zipDownloadUrl || updateData.downloadUrl;
-
-  // 模拟进度条
-  let progress = 0;
-  const progressInterval = setInterval(() => {
-    progress += Math.random() * 15 + 5;
-    if (progress >= 95) {
-      progress = 95;
-      clearInterval(progressInterval);
+  const updateProgress = (loaded, total, percent) => {
+    if (progressBar) progressBar.style.width = percent + '%';
+    if (progressPercent) progressPercent.textContent = Math.round(percent) + '%';
+    if (downloadedSizeEl) downloadedSizeEl.textContent = formatBytes(loaded);
+    if (totalSizeEl && total > 0) totalSizeEl.textContent = formatBytes(total);
+    if (statusText) {
+      statusText.textContent = percent >= 100 ? '下载完成，正在保存...' : `正在下载... ${Math.round(percent)}%`;
     }
-    if (progressBar) progressBar.style.width = progress + '%';
-    if (statusText) statusText.textContent = `正在下载... ${Math.round(progress)}%`;
-  }, 200);
+  };
 
-  // 创建隐藏a标签触发下载
-  setTimeout(() => {
+  updateProgress(0, 0, 0);
+
+  try {
+    // 使用fetch获取真实下载进度
+    const response = await fetch(downloadUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const contentLength = parseInt(response.headers.get('content-length') || '0');
+    const reader = response.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      const percent = contentLength ? (received / contentLength) * 100 : Math.min(90, received / 1024 / 80); // 未知大小估测
+      updateProgress(received, contentLength, percent);
+    }
+
+    // 合并chunks并创建Blob触发下载
+    const blob = new Blob(chunks);
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = `leapmotor-ai-assistant-${updateData.version}.zip`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // 释放blob URL（延迟以便浏览器开始下载）
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+
+    updateProgress(received, contentLength, 100);
+
+    setTimeout(() => {
+      closeUpdateProgressModal();
+      showInstallGuide(updateData);
+    }, 800);
+
+  } catch (err) {
+    console.error('[在线更新] ❌ 下载失败:', err);
+    // fetch失败则降级为简单的a标签下载
+    console.log('[在线更新] 🔀 降级为浏览器直接下载...');
     const a = document.createElement('a');
     a.href = downloadUrl;
     a.download = `leapmotor-ai-assistant-${updateData.version}.zip`;
@@ -5215,52 +5258,95 @@ function startDownloadUpdate(updateData) {
     a.click();
     document.body.removeChild(a);
 
-    // 下载已触发，进度100%
-    clearInterval(progressInterval);
-    if (progressBar) progressBar.style.width = '100%';
-    if (statusText) statusText.textContent = '下载完成！正在准备安装指引...';
-
     setTimeout(() => {
       closeUpdateProgressModal();
       showInstallGuide(updateData);
-    }, 800);
-  }, 1200);
+    }, 500);
+  }
 }
 
 /**
- * 显示安装指引（重要：不要删除旧版本，只需刷新即可）
+ * 格式化字节大小
+ */
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+/**
+ * 显示安装指引
  */
 function showInstallGuide(updateData) {
   const statusEl = document.getElementById('updateStatusText');
   if (statusEl) {
+    const ver = updateData.version || '新版本';
     statusEl.innerHTML = `
-      <div style="margin-top:8px;line-height:1.8">
-        <div style="margin-bottom:10px;padding:10px 12px;background:rgba(143,224,64,0.08);border:1px solid rgba(143,224,64,0.2);border-radius:8px;">
-          ✅ <strong>安装包已开始下载！</strong><br>
-          <span style="font-size:12px;color:var(--text-secondary);">请按以下3步完成更新（<span style="color:#e74c3c;font-weight:600">无需删除旧版本</span>，不会重复安装）</span>
+      <div style="margin-top:8px;line-height:1.7">
+        <div style="margin-bottom:10px;padding:10px 12px;background:rgba(143,224,64,0.1);border:1px solid rgba(143,224,64,0.25);border-radius:10px;">
+          ✅ <strong>${ver} 安装包已下载！</strong><br>
+          <span style="font-size:12px;color:var(--text-secondary);">请按以下 <strong>3步</strong> 完成更新（所有设置和数据会完整保留）</span>
         </div>
-        <div style="padding-left:4px;font-size:13px;">
-          <div style="margin-bottom:8px;"><strong>① 解压并覆盖旧文件</strong><br>
-            <span style="color:var(--text-secondary);font-size:12px;">下载完成后解压ZIP，将里面的 <code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;">extension</code> 文件夹中的所有文件，<strong>复制覆盖</strong>到你当时「加载已解压的扩展程序」时选择的目录中（替换旧文件）。</span>
+
+        <div style="padding:0 4px;font-size:13px;">
+          <div style="margin-bottom:10px;display:flex;gap:8px;align-items:flex-start;">
+            <span style="flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#000;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;">1</span>
+            <div><strong>解压下载的 ZIP 文件</strong><br>
+              <span style="color:var(--text-secondary);font-size:12px;">在浏览器下载栏点击下载的文件，或在「下载」文件夹中找到 <code style="background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:3px;font-size:11px;">leapmotor-ai-assistant-${ver}.zip</code> 双击解压。</span>
+            </div>
           </div>
-          <div style="margin-bottom:8px;"><strong>② 打开扩展管理页面</strong><br>
-            <button onclick="window.open('chrome://extensions/','_blank')" style="margin-top:4px;padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">
-              🚀 一键打开 chrome://extensions/
-            </button>
+
+          <div style="margin-bottom:10px;display:flex;gap:8px;align-items:flex-start;">
+            <span style="flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#000;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;">2</span>
+            <div><strong>覆盖 extension 文件夹</strong><br>
+              <span style="color:var(--text-secondary);font-size:12px;">打开解压后的文件夹，把里面 <strong>所有文件</strong>复制到你之前加载扩展的那个 <code style="background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:3px;font-size:11px;">extension</code> 目录，<strong>全部替换</strong>。</span>
+            </div>
           </div>
-          <div><strong>③ 点击刷新按钮</strong><br>
-            <span style="color:var(--text-secondary);font-size:12px;">在扩展管理页面，找到「零跑AI助手」卡片，点击卡片右下角的 <strong>🔄 刷新图标</strong> 即可完成更新！</span>
+
+          <div style="margin-bottom:4px;display:flex;gap:8px;align-items:flex-start;">
+            <span style="flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#000;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;">3</span>
+            <div><strong>刷新扩展</strong><br>
+              <span style="color:var(--text-secondary);font-size:12px;">点击下方按钮打开扩展管理页，找到「零跑AI助手」卡片，点击右下角 🔄 刷新按钮即可。</span>
+              <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button onclick="window.open('chrome://extensions/','_blank')" style="padding:6px 14px;background:var(--accent);color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">
+                  🚀 打开 chrome://extensions
+                </button>
+                <button onclick="showUpdateStepTip('find-folder')" style="padding:6px 14px;background:rgba(255,255,255,0.08);color:var(--text-primary);border:1px solid var(--glass-border);border-radius:6px;cursor:pointer;font-size:12px;">
+                  📁 忘了 extension 在哪？
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        <div style="margin-top:10px;padding:8px 12px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.25);border-radius:6px;font-size:11px;color:#e74c3c;">
-          ⚠️ <strong>重要：</strong>不要点击「加载已解压的扩展程序」按钮！那会创建副本导致出现两个零跑AI助手。<br>正确做法是：<strong>覆盖旧文件后直接点卡片右下角的🔄刷新按钮。</strong>
-        </div>
-        <div style="margin-top:8px;padding:8px 12px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);border-radius:6px;font-size:11px;color:var(--text-secondary);">
-          💡 Chrome出于安全考虑，非应用商店安装的本地扩展无法真正静默自动更新，这是浏览器限制。所有设置、API Key、收藏夹将完整保留。
+
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.25);border-radius:8px;font-size:11px;color:#e74c3c;line-height:1.6;">
+          ⚠️ <strong>不要点「加载已解压的扩展程序」！</strong>那会创建副本出现两个助手。只需覆盖旧文件 → 点🔄刷新。
         </div>
       </div>
     `;
     statusEl.className = 'update-status-text success';
+  }
+}
+
+/**
+ * 显示如何找到extension文件夹的提示
+ */
+function showUpdateStepTip(step) {
+  if (step === 'find-folder') {
+    const statusEl = document.getElementById('updateStatusText');
+    if (!statusEl) return;
+    // 追加提示内容
+    const tipDiv = document.createElement('div');
+    tipDiv.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:8px;font-size:12px;line-height:1.7;';
+    tipDiv.innerHTML = `
+      📁 <strong>如何找到 extension 文件夹：</strong><br>
+      1. 打开 <button onclick="window.open('chrome://extensions/','_blank')" style="padding:2px 8px;background:rgba(0,212,255,0.2);border:1px solid rgba(0,212,255,0.3);border-radius:4px;color:var(--lp-cyan);cursor:pointer;font-size:11px;">chrome://extensions</button><br>
+      2. 找到「零跑AI助手」卡片<br>
+      3. 卡片上会显示本地路径（类似 <code style="background:rgba(255,255,255,0.1);padding:0 3px;border-radius:2px;">/Users/xxx/extension</code>）<br>
+      4. 复制路径在文件管理器中打开即可
+    `;
+    statusEl.appendChild(tipDiv);
   }
 }
 
