@@ -1966,6 +1966,14 @@ async function detectIntentWithAI(userMessage) {
     return detectIntentThreeWay(userMessage);
   }
 
+  // 构建对话上下文（最近5轮对话）
+  const recentHistory = chatHistory.slice(-10).map(h => {
+    const role = h.role === 'user' ? '用户' : 'AI';
+    // 截取每条消息的前200字符避免过长
+    const content = (h.content || '').substring(0, 200);
+    return `${role}: ${content}`;
+  }).join('\n');
+
   try {
     const response = await fetch(`${settings.apiUrl}/chat/completions`, {
       method: 'POST',
@@ -1978,55 +1986,63 @@ async function detectIntentWithAI(userMessage) {
         messages: [
           {
             role: 'system',
-            content: `你是零跑汽车AI助手的意图识别引擎。你的任务是将用户的问题分类为以下三种类型之一：
+            content: `你是零跑汽车AI助手的意图识别引擎。你的任务是结合对话上下文，判断用户当前问题的意图类型，以便路由到正确的处理通道。
 
-${LEP_SYSTEMS}
+## 四种意图类型：
 
-## 三种类型定义：
-
-### 1. system (系统问题)
-用户询问的是零跑汽车内部系统的操作、流程、政策、规定。
-包括：OA审批、报销流程、人事制度、企业微信使用、IT支持等公司内部事务。
-
-### 1.1 oa_process (OA流程查询) - system的子类
-用户明确询问要发起什么流程、某个事项走什么流程、如何申请某项业务等。
-特征词："发起什么流程"、"走什么流程"、"怎么申请"、"请什么假"、"报销"、"审批"、"流程"、"请假"、"加班"、"出差"、"采购"、"用印"、"印章"、"合同"
+### 1. oa_process（OA流程查询）
+用户明确想**发起/申请/走流程**，需要查询OA系统中可发起的审批流程。
+特征：用户想知道某个事项"走什么流程"、"怎么申请"、"用哪个流程"。
 示例：
-- "我想请病假该走什么流程" → {"type": "oa_process"}
-- "报销需要走什么流程" → {"type": "oa_process"}
-- "怎么发起采购流程" → {"type": "oa_process"}
+- "我想请病假该走什么流程" → oa_process
+- "报销需要走什么流程" → oa_process
+- "我想用印该走哪个流程" → oa_process
+- "怎么发起采购" → oa_process
 
-### 2. page_analysis (页面分析)
-用户明确要求分析、总结、提取当前网页的内容或数据。
-特征：包含"页面"、"网页"、"总结"、"分析"、"提取"、"表格"、"截图"等与当前浏览页面相关的指令。
+### 2. system（系统问题咨询）
+用户在**咨询**零跑内部系统的操作、流程问题、政策制度（不是要发起流程，而是在问问题）。
+特征：含"怎么办""为什么""报错""登录不了""有问题""找谁"等问题词。
+示例：
+- "报销流程发起不了怎么办" → system
+- "企微登录不了" → system
+- "审批被驳回找谁" → system
+- "实习生如何报销" → system
 
-### 3. general_chat (通用问答/闲聊)
-用户问的是与零跑内部系统和当前页面无关的一般性问题。
-包括：天气查询、新闻资讯、购物建议、生活常识、技术知识、闲聊对话等。
+### 3. page_analysis（页面分析）
+用户要求**分析、总结、提取**当前浏览的网页内容。
+特征：含"总结页面""分析页面""提取网页""这个页面说什么"等指令。
+示例：
+- "总结这个页面" → page_analysis
+- "分析当前网页内容" → page_analysis
 
-## 判断示例：
-- "实习生如何报销" → {"type": "system"}
-- "总结这个页面的主要内容" → {"type": "page_analysis"}
-- "明天杭州天气怎么样" → {"type": "general_chat"}
-- "我想买一辆零跑C10" → {"type": "general_chat"}
+### 4. general_chat（通用问答）
+与零跑内部系统和当前页面都无关的一般性问题。
+示例：
+- "明天杭州天气" → general_chat
+- "帮我写一段Python代码" → general_chat
+
+## 重要判断规则：
+1. 区分"发起流程"(oa_process) vs "流程有问题"(system)：用户要"走流程/申请"→oa_process；用户在"问问题/报错/求助"→system
+2. 结合对话上下文：如果前几轮在讨论某个系统问题，当前消息可能是追问，应保持system类型
+3. 只有用户明确要"发起/申请/走流程"时才是oa_process，纯咨询不算
 
 请严格按以下JSON格式回复，不要包含其他内容：
-{"type": "system|page_analysis|general_chat", "systemType": "系统名称或null", "reason": "简短原因"}`
+{"type": "oa_process|system|page_analysis|general_chat", "reason": "简短原因"}`
           },
           {
             role: 'user',
-            content: userMessage
+            content: `【对话上下文】\n${recentHistory || '（无历史对话）'}\n\n【当前问题】\n${userMessage}`
           }
         ],
         max_tokens: 150,
-        temperature: 0.1,  // 低温度确保稳定输出
+        temperature: 0.1,
         stream: false
       })
     });
 
     if (!response.ok) {
       console.warn('[AI意图识别] API调用失败:', response.status);
-      return detectIntentThreeWay(userMessage); // 回退到关键词匹配
+      return detectIntentThreeWay(userMessage);
     }
 
     const data = await response.json();
@@ -2044,24 +2060,23 @@ ${LEP_SYSTEMS}
 
       const result = JSON.parse(jsonStr);
 
-      // 验证返回的type是否合法
-      const validTypes = ['system', 'page_analysis', 'general_chat'];
+      const validTypes = ['oa_process', 'system', 'page_analysis', 'general_chat'];
       const type = validTypes.includes(result.type) ? result.type : 'general_chat';
 
       return {
         type: type,
-        confidence: 0.95, // AI判断置信度高
+        confidence: 0.92,
         reason: result.reason || `AI判定为${getTypeLabel(type)}`,
-        systemType: result.systemType || null
+        systemType: result.systemType || null,
+        aiDetected: true
       };
     } catch (parseError) {
       console.warn('[AI意图识别] JSON解析失败:', parseError.message);
-      // 尝试从文本中推断类型
       return inferTypeFromText(content);
     }
   } catch (error) {
     console.error('[AI意图识别] 调用失败:', error);
-    return detectIntentThreeWay(userMessage); // 回退到关键词匹配
+    return detectIntentThreeWay(userMessage);
   }
 }
 
@@ -2086,6 +2101,7 @@ function inferTypeFromText(text) {
  */
 function getTypeLabel(type) {
   const labels = {
+    'oa_process': 'OA流程查询',
     'system': '系统问题',
     'page_analysis': '页面分析',
     'general_chat': '通用问答'
@@ -2523,46 +2539,25 @@ async function callMainModelWithContext(userMessage, contextContent, customSyste
  * 2. page_analysis (页面分析)   → 调用主AI模型 + 传入当前页面内容
  * 3. general_chat (通用问答)     → 调用主AI模型 + 不传页面内容（联网查询）
  */
-async function processMessageWithFastGPT(userMessage, contextContent) {
+async function processMessageWithFastGPT(userMessage, contextContent, preDetectedIntent) {
   // 如果FastGPT未启用（用户手动禁用），直接使用主模型
   if (!FASTGPT_CONFIG.enabled) {
     return await callMainModel(userMessage, contextContent);
   }
 
-  // ========== 第一步：意图识别（关键词优先 + AI补充） ==========
-  setStatus('正在分析问题类型...', 'loading');
+  // ========== 第一步：使用已判断的意图 ==========
+  setStatus('正在路由处理...', 'loading');
 
   let intent;
 
-  // 【修复】优先使用关键词匹配（快速且准确）
-  const keywordIntent = detectIntentThreeWay(userMessage);
-  console.log('[四路路由] 🔍 关键词意图识别结果:', keywordIntent);
-
-  // 判断是否应该直接使用关键词结果（高置信度场景）
-  const isHighConfidenceOA = keywordIntent.type === 'oa_process' && keywordIntent.confidence >= 0.8;
-  const isHighConfidenceAnalysis = keywordIntent.type === 'page_analysis';
-  const isHighConfidenceSystem = keywordIntent.type === 'system' && keywordIntent.confidence >= 0.7;
-
-  if (isHighConfidenceOA || isHighConfidenceAnalysis || isHighConfidenceSystem) {
-    // 高置信度场景：直接使用关键词结果，跳过AI判断
-    intent = keywordIntent;
-    console.log('[四路路由] ✅ 使用关键词结果（高置信度）:', intent);
+  if (preDetectedIntent) {
+    // sendMessage已通过AI判断了意图，直接使用
+    intent = preDetectedIntent;
+    console.log('[四路路由] 🤖 使用AI预判断意图:', intent);
   } else {
-    // 低置信度场景：调用AI辅助判断
-    try {
-      intent = await detectIntentWithAI(userMessage);
-      console.log('[四路路由] 🤖 AI意图识别结果:', intent);
-
-      // 【重要】如果AI判断结果与关键词冲突，且关键词是OA流程，优先信任关键词
-      if (keywordIntent.type === 'oa_process' && intent.type !== 'oa_process') {
-        console.warn('[四路路由] ⚠️ AI与关键词冲突，优先使用关键词结果（OA流程）');
-        intent = keywordIntent;
-      }
-    } catch (e) {
-      // AI判断失败，回退到关键词匹配
-      console.warn('[四路路由] AI意图识别失败，回退到关键词匹配:', e);
-      intent = keywordIntent;
-    }
+    // 兜底：如果没有预判断，用关键词匹配
+    intent = detectIntentThreeWay(userMessage);
+    console.log('[四路路由] 🔍 关键词意图识别结果(兜底):', intent);
   }
 
   // ========== 第二步：根据类型分发 ==========
@@ -3017,13 +3012,11 @@ async function sendMessage() {
   // 生成唯一消息ID用于关联思考过程
   const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-  // ===== 第一步：纯计算（不操作DOM）=====
+  // ===== 第一步：关键词预检测（仅用于决定是否需要提前抓取页面）=====
+  const preIntent = detectIntentThreeWay(text);
+  const needPageContent = preIntent.type === 'page_analysis';
 
-  // 优先进行意图检测，决定是否需要抓取页面
-  const quickIntent = detectIntentThreeWay(text);
-  const needPageContent = quickIntent.type === 'page_analysis';
-
-  console.log(`[sendMessage] 🚦 意图检测: ${quickIntent.type}, 需要页面内容: ${needPageContent}`);
+  console.log(`[sendMessage] 🚦 关键词预检测: ${preIntent.type}, 需要页面内容: ${needPageContent}`);
 
   // 获取页面内容（仅在需要时抓取）
   if (activePageId === 'current' && needPageContent) {
@@ -3097,6 +3090,8 @@ async function sendMessage() {
 
   // 再创建AI气泡（思考过程嵌入气泡顶部）
   const thinkingEl = showThinkingProcess(messageId);
+  let finalIntent = preIntent; // 默认使用关键词预检测结果
+
   if (thinkingEl) {
     // 步骤1：开始分析用户意图
     addThinkingStep('detect', '正在分析您的问题意图...');
@@ -3104,34 +3099,44 @@ async function sendMessage() {
     if (needPageContent && contextContent) {
       addThinkingStep('success', '✅ 已成功抓取页面内容');
     }
+
+    // ===== 步骤1.5：调用AI进行意图判断（含对话上下文）=====
+    try {
+      addThinkingStep('detect', '正在结合对话上下文，用AI智能判断意图...');
+      finalIntent = await detectIntentWithAI(text);
+      console.log('[sendMessage] 🤖 AI意图判断结果:', finalIntent);
+    } catch (e) {
+      console.warn('[sendMessage] AI意图判断失败，使用关键词结果:', e);
+      finalIntent = preIntent;
+    }
   }
 
   try {
-    // 步骤2：显示识别到的意图（使用前面已检测的结果）
-    const routeInfo = getRouteDisplayInfo(quickIntent.type);
+    // 步骤2：显示识别到的意图
+    const routeInfo = getRouteDisplayInfo(finalIntent.type);
 
     // 更新思考步骤：显示路由决策
     addThinkingStep('route',
       `问题类型识别为：<span class="route-badge ${routeInfo.badgeClass}">${routeInfo.name}</span>` +
-      (quickIntent.reason ? `<br/><small style="color:var(--text-tertiary);margin-top:4px;display:inline-block;">${quickIntent.reason}</small>` : '')
+      (finalIntent.reason ? `<br/><small style="color:var(--text-tertiary);margin-top:4px;display:inline-block;">${finalIntent.reason}</small>` : '')
     );
 
     // 根据路由类型显示不同的处理步骤提示
-    if (quickIntent.type === 'oa_process') {
+    if (finalIntent.type === 'oa_process') {
       addThinkingStep('fetch', '正在调用OA流程接口获取可发起的审批流程...');
       updateThinkingTitle('💭 正在查询OA流程...');
-    } else if (quickIntent.type === 'system') {
+    } else if (finalIntent.type === 'system') {
       addThinkingStep('fetch', '正在连接零跑内部知识库(FastGPT)...');
       updateThinkingTitle('💭 正在查询知识库...');
-    } else if (quickIntent.type === 'page_analysis') {
-      addThinkingStep('fetch', contextContent ? '正在抓取并分析页面内容...' : '等待页面内容...');
+    } else if (finalIntent.type === 'page_analysis') {
+      addThinkingStep('fetch', contextContent ? '正在分析页面内容...' : '等待页面内容...');
       updateThinkingTitle('💭 正在分析页面...');
     } else {
       updateThinkingTitle('💭 正在思考如何回答...');
     }
 
-    // 使用FastGPT智能路由（如果启用）
-    const fastgptResult = await processMessageWithFastGPT(text, contextContent);
+    // 使用智能路由（传入已判断的intent，避免重复检测）
+    const fastgptResult = await processMessageWithFastGPT(text, contextContent, finalIntent);
 
     removeTypingIndicator();
 
@@ -3142,7 +3147,7 @@ async function sendMessage() {
     }
 
     // 步骤3/4：显示实际使用的路由和API调用信息
-    const actualRouteInfo = getRouteDisplayInfo(fastgptResult.routeType || quickIntent.type);
+    const actualRouteInfo = getRouteDisplayInfo(fastgptResult.routeType || finalIntent.type);
     addThinkingStep('ai',
       `使用 <strong>${actualRouteInfo.name}</strong> 模式处理` +
       (fastgptResult.source ? `<br/>数据来源: ${fastgptResult.source}` : '')
