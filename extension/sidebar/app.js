@@ -5378,28 +5378,96 @@ function showChangelogModal() {
 
   const contentEl = document.getElementById('fullChangelogContent');
   if (contentEl) {
-    // 加载完整的更新历史（可以从缓存或API获取）
     contentEl.innerHTML = `
+      <div class="changelog-version latest">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.3.2</span>
+          <span class="changelog-version-date">2026-08-20</span>
+          <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🔧 改进优化</h5>
+          <ul>
+            <li>补全更新日志内容，完整显示v1.0.0到最新版本的历史更新</li>
+            <li>优化更新日志UI：最新版本高亮卡片 + 「最新」徽章</li>
+            <li>更新检查弹窗默认版本号显示同步到最新</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.3.1</span>
+          <span class="changelog-version-date">2026-08-20</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 新功能</h5>
+          <ul>
+            <li><strong>一键自动更新</strong> - 点击「检查更新」按钮自动检测新版本，真实下载进度显示，清晰3步引导完成更新</li>
+            <li><strong>macOS/Windows 更新脚本</strong> - 双击 .command/.bat 文件一键下载并覆盖更新</li>
+          </ul>
+          <h5 style="margin:16px 0 8px;color:var(--text-primary)">🔧 改进优化</h5>
+          <ul>
+            <li>使用 fetch + ReadableStream 实现真实下载进度（百分比/已下载大小/总大小）</li>
+            <li>优化更新安装指引UI：编号步骤 + 「忘了extension在哪？」辅助按钮</li>
+            <li>fetch失败自动降级为浏览器直接下载，保证可用性</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.3.0</span>
+          <span class="changelog-version-date">2026-08-20</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 流式输出</h5>
+          <ul>
+            <li><strong>思考过程流式输出</strong> - 参考 WorkBuddy 等平台，AI思考过程实时流式显示，不再等待思考完成才输出</li>
+            <li><strong>回复内容流式输出</strong> - AI回复内容逐字实时渲染，打字机效果体验</li>
+            <li><strong>双模型流式支持</strong> - 主AI模型（Agnes）和 FastGPT 知识库均支持流式输出</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.2.x 系列</span>
+          <span class="changelog-version-date">2026-08</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 功能迭代</h5>
+          <ul>
+            <li><strong>多标签页分析</strong> - 支持同时选择多个标签页内容进行综合分析</li>
+            <li><strong>提示词收藏夹</strong> - 保存常用提示词，一键复用</li>
+            <li><strong>快捷键自定义</strong> - 支持自定义唤起和快速分析快捷键</li>
+            <li><strong>智能推荐问题</strong> - 基于页面内容动态生成个性化推荐</li>
+            <li><strong>历史消息迁移</strong> - 右键菜单支持将历史消息移到当前对话</li>
+            <li><strong>OA流程查询</strong> - 一键查看所有可发起的审批流程</li>
+            <li><strong>文件上传支持</strong> - 支持上传文件作为对话上下文</li>
+            <li><strong>深色/浅色主题切换</strong> - 跟随系统或手动切换</li>
+          </ul>
+          <h5 style="margin:16px 0 8px;color:var(--text-primary)">🔧 优化修复</h5>
+          <ul>
+            <li>优化AI意图识别准确率</li>
+            <li>优化卡片UI和视觉效果</li>
+            <li>修复多个已知问题，提升稳定性</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="changelog-version">
         <div class="changelog-version-header">
           <span class="changelog-version-number">v1.1.0</span>
           <span class="changelog-version-date">2026-01-10</span>
         </div>
         <div class="changelog-version-content">
-          <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 新功能</h5>
           <ul>
-            <li><strong>智能推荐问题</strong> - 基于页面内容动态生成个性化推荐</li>
-            <li><strong>历史消息迁移</strong> - 右键菜单支持将历史消息移到当前对话</li>
-            <li><strong>标签页绿色标注</strong> - 选择多标签时显示视觉标识</li>
-            <li><strong>OA流程查询</strong> - 一键查看所有可发起的审批流程</li>
-            <li><strong>在线自动更新</strong> - 支持自动检测和一键更新</li>
-          </ul>
-
-          <h5 style="margin:16px 0 8px;color:var(--text-primary)">🔧 改进优化</h5>
-          <ul>
-            <li>优化AI意图识别准确率</li>
-            <li>修复多个已知问题</li>
-            <li>提升整体性能和稳定性</li>
+            <li>智能推荐问题 - 基于页面内容动态生成个性化推荐</li>
+            <li>历史消息迁移 - 右键菜单支持将历史消息移到当前对话</li>
+            <li>标签页绿色标注 - 选择多标签时显示视觉标识</li>
+            <li>OA流程查询 - 一键查看所有可发起的审批流程</li>
+            <li>在线自动更新 - 支持自动检测新版本</li>
           </ul>
         </div>
       </div>

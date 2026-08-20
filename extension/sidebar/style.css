@@ -3519,7 +3519,7 @@ body {
 .changelog-version-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
@@ -3533,6 +3533,40 @@ body {
 .changelog-version-date {
   font-size: 12px;
   color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.changelog-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.latest-badge {
+  background: linear-gradient(135deg, var(--accent), #a8f060);
+  color: #000;
+}
+
+.changelog-version.latest {
+  background: rgba(143, 224, 64, 0.05);
+  border: 1px solid rgba(143, 224, 64, 0.15);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.changelog-version:not(.latest) {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--glass-border);
+  margin-bottom: 12px;
+}
+
+.changelog-version:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .changelog-version-content {
