@@ -51,11 +51,38 @@ fi
 cp "${OUTPUT_DIR}/leapmotor-ai-assistant-v${VERSION}.zip" "${OUTPUT_DIR}/mac/"
 cp "${OUTPUT_DIR}/leapmotor-ai-assistant-v${VERSION}.zip" "${OUTPUT_DIR}/windows/"
 
+# ============================================
+# 1.5 复制一键更新脚本到 dist 根目录（用户双击即可更新）
+# ============================================
+# macOS 版本
+UPDATE_CMD_MAC="${PROJECT_ROOT}/零跑AI助手-更新.command"
+if [ -f "${UPDATE_CMD_MAC}" ]; then
+    cp "${UPDATE_CMD_MAC}" "${OUTPUT_DIR}/mac/零跑AI助手-更新.command"
+    chmod +x "${OUTPUT_DIR}/mac/零跑AI助手-更新.command"
+    cp "${UPDATE_CMD_MAC}" "${OUTPUT_DIR}/零跑AI助手-更新.command"
+    chmod +x "${OUTPUT_DIR}/零跑AI助手-更新.command"
+    echo "✅ macOS 更新脚本已复制"
+else
+    echo "⚠️  未找到 零跑AI助手-更新.command，跳过"
+fi
+
+# Windows 版本
+UPDATE_CMD_WIN="${PROJECT_ROOT}/零跑AI助手-更新.bat"
+if [ -f "${UPDATE_CMD_WIN}" ]; then
+    cp "${UPDATE_CMD_WIN}" "${OUTPUT_DIR}/windows/零跑AI助手-更新.bat"
+    cp "${UPDATE_CMD_WIN}" "${OUTPUT_DIR}/零跑AI助手-更新.bat"
+    echo "✅ Windows 更新脚本已复制"
+else
+    echo "⚠️  未找到 零跑AI助手-更新.bat，跳过"
+fi
+
 echo ""
 echo "📋 生成的安装包："
 echo "   ├── ${OUTPUT_DIR}/leapmotor-ai-assistant-v${VERSION}.zip (通用)"
 echo "   ├── ${OUTPUT_DIR}/mac/leapmotor-ai-assistant-v${VERSION}.zip"
-echo "   └── ${OUTPUT_DIR}/windows/leapmotor-ai-assistant-v${VERSION}.zip"
+echo "   ├── ${OUTPUT_DIR}/windows/leapmotor-ai-assistant-v${VERSION}.zip"
+echo "   ├── ${OUTPUT_DIR}/mac/零跑AI助手-更新.command (macOS 一键更新)"
+echo "   └── ${OUTPUT_DIR}/windows/零跑AI助手-更新.bat (Windows 一键更新)"
 echo ""
 
 # ============================================
