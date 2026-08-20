@@ -13,7 +13,10 @@ PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 EXTENSION_DIR="${PROJECT_ROOT}/extension"
 OUTPUT_DIR="${PROJECT_ROOT}/dist"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-VERSION="1.0.0"
+# 从 manifest.json 动态读取版本号，避免硬编码
+VERSION=$(grep -o '"version": *"[^"]*"' "${EXTENSION_DIR}/manifest.json" | grep -o '"[^"]*"$' | tr -d '"')
+echo "🔖 当前版本: v${VERSION}"
+echo ""
 
 # 创建输出目录
 mkdir -p "${OUTPUT_DIR}/mac"

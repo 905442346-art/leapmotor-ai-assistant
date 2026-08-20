@@ -1736,7 +1736,7 @@ async function detectIntent(userMessage) {
  * @param {string} question - 用户问题
  * @returns {Promise<{answer: string, sources: Array, success: boolean, error?: string}>}
  */
-async function callFastGPT(question) {
+async function callFastGPT(question, onStreamChunk) {
   // 使用预配置的FastGPT常量（用户无需配置）
   if (!FASTGPT_CONFIG.apiUrl || !FASTGPT_CONFIG.workflowId) {
     console.error('[FastGPT] ❌ 配置缺失:', {
@@ -1788,22 +1788,15 @@ async function callFastGPT(question) {
             content: question
           }
         ],
-        stream: false,
+        stream: true,
         temperature: 0.7,
         max_tokens: 2000
       })
     });
 
-    // 计算响应时间
     const responseTime = Date.now() - startTime;
     console.log(`[FastGPT] ⏱️ 响应时间: ${responseTime}ms`);
 
-    // 检查网络错误（CORS、DNS、超时等）
-    if (!response) {
-      throw new Error('网络请求失败：无法连接到FastGPT服务器');
-    }
-
-    // 检查HTTP状态码
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
       console.error(`[FastGPT] ❌ HTTP错误 ${response.status}:`, errorText.substring(0, 500));
@@ -1813,7 +1806,6 @@ async function callFastGPT(question) {
         const errorJson = JSON.parse(errorText);
         errorMsg = errorJson.error?.message || errorJson.message || errorJson.error || errorMsg;
       } catch(e) {
-        // 如果不是JSON，直接使用原始错误文本（截断避免过长）
         if (errorText.length > 200) {
           errorMsg += `: ${errorText.substring(0, 200)}...`;
         } else {
@@ -1821,79 +1813,62 @@ async function callFastGPT(question) {
         }
       }
 
-      // 特殊状态码提示
-      if (response.status === 401) {
-        errorMsg = 'FastGPT API Key无效或已过期';
-      } else if (response.status === 403) {
-        errorMsg = 'FastGPT访问被拒绝（可能IP白名单限制）';
-      } else if (response.status === 404) {
-        errorMsg = 'FastGPT工作流ID不存在或已删除';
-      } else if (response.status === 500 || response.status === 502 || response.status === 503) {
-        errorMsg = 'FastGPT服务器内部错误，请稍后重试';
-      }
+      if (response.status === 401) errorMsg = 'FastGPT API Key无效或已过期';
+      else if (response.status === 403) errorMsg = 'FastGPT访问被拒绝（可能IP白名单限制）';
+      else if (response.status === 404) errorMsg = 'FastGPT工作流ID不存在或已删除';
+      else if (response.status >= 500) errorMsg = 'FastGPT服务器内部错误，请稍后重试';
 
       return { answer: '', sources: [], success: false, error: errorMsg };
     }
 
-    console.log('[FastGPT] ✅ HTTP请求成功，状态:', response.status);
+    // ===== 流式SSE解析 =====
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let result = '';
+    let hasContent = false;
+    let sources = [];
 
-    // 安全解析JSON响应（处理截断或不完整的情况）
-    let data;
-    try {
-      const responseText = await response.text();
-      console.log('[FastGPT] 原始响应长度:', responseText.length);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      // 尝试解析JSON
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('[FastGPT] JSON解析失败:', parseError.message);
-      return {
-        answer: '',
-        sources: [],
-        success: false,
-        error: `知识库响应格式异常，请稍后重试`
-      };
-    }
+      try {
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
 
-    console.log('[FastGPT] 响应数据:', data);
-
-    // 解析FastGPT响应格式（兼容OpenAI格式）
-    if (data.choices && data.choices[0]) {
-      const choice = data.choices[0];
-      const answer = choice.message?.content || '';
-
-      // 验证answer是否有效
-      if (!answer || typeof answer !== 'string') {
-        console.warn('[FastGPT] 返回内容为空');
-        return { answer: '', sources: [], success: false, error: '知识库未返回有效内容' };
+        for (const line of lines) {
+          if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const content = data?.choices?.[0]?.delta?.content ||
+                              data?.choices?.[0]?.message?.content;
+              if (content && typeof content === 'string') {
+                result += content;
+                hasContent = true;
+                if (onStreamChunk) onStreamChunk(result);
+              }
+              if (data?.choices?.[0]?.message?.metadata?.sources) {
+                sources = data.choices[0].message.metadata.sources;
+              } else if (data?.metadata?.sources) {
+                sources = data.metadata.sources;
+              }
+            } catch (parseError) {
+              console.warn('[FastGPT流式] 解析失败:', parseError.message);
+            }
+          }
+        }
+      } catch (chunkError) {
+        console.warn('[FastGPT流式] 数据块错误:', chunkError);
       }
-
-      // 提取来源信息（如果FastGPT返回了）
-      let sources = [];
-      if (choice.message?.metadata?.sources) {
-        sources = choice.message.metadata.sources;
-      } else if (data.metadata?.sources) {
-        sources = data.metadata.sources;
-      }
-
-      return {
-        answer: answer.trim(),
-        sources,
-        success: true
-      };
     }
 
-    // 尝试其他可能的响应格式
-    if (data.answer || data.content || data.result) {
-      return {
-        answer: (data.answer || data.content || data.result || '').trim(),
-        sources: data.sources || [],
-        success: true
-      };
+    console.log('[FastGPT] ✅ 流式完成，内容长度:', result.length);
+
+    if (!hasContent || !result || result.trim() === '') {
+      return { answer: '', sources: [], success: false, error: '知识库未返回有效内容' };
     }
 
-    console.warn('[FastGPT] 未知响应格式:', JSON.stringify(data).substring(0, 200));
-    return { answer: '', sources: [], success: false, error: '响应格式异常' };
+    return { answer: result.trim(), sources, success: true };
 
   } catch (error) {
     // 详细错误分类
@@ -2539,10 +2514,10 @@ async function callMainModelWithContext(userMessage, contextContent, customSyste
  * 2. page_analysis (页面分析)   → 调用主AI模型 + 传入当前页面内容
  * 3. general_chat (通用问答)     → 调用主AI模型 + 不传页面内容（联网查询）
  */
-async function processMessageWithFastGPT(userMessage, contextContent, preDetectedIntent) {
+async function processMessageWithFastGPT(userMessage, contextContent, preDetectedIntent, onStreamChunk) {
   // 如果FastGPT未启用（用户手动禁用），直接使用主模型
   if (!FASTGPT_CONFIG.enabled) {
-    return await callMainModel(userMessage, contextContent);
+    return await callMainModel(userMessage, contextContent, onStreamChunk);
   }
 
   // ========== 第一步：使用已判断的意图 ==========
@@ -2573,7 +2548,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
       console.log(`[四路路由] 📋 路由到【系统问题】${intent.systemType ? '(' + intent.systemType + ')' : ''} → FastGPT工作流`);
       setStatus('正在查询公司知识库...', 'loading');
 
-      const fastgptResult = await callFastGPT(userMessage);
+      const fastgptResult = await callFastGPT(userMessage, onStreamChunk);
 
       if (fastgptResult.success && fastgptResult.answer) {
         // 知识库有答案，返回并标注来源
@@ -2589,7 +2564,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
         console.warn('[四路路由] ⚠️ 知识库查询失败，回退到主AI模型:', fastgptResult.error);
 
         // 回退时作为通用问答处理（不传页面内容）
-        const fallbackResult = await callMainModel(userMessage, null);
+        const fallbackResult = await callMainModel(userMessage, null, onStreamChunk);
         return {
           text: fallbackResult || '（AI未返回有效内容）',
           source: 'ai_model_fallback',
@@ -2603,7 +2578,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
       console.log('[四路路由] 🔍 路由到【页面分析】 → 主AI模型（含页面上下文）');
       setStatus('正在分析页面内容...', 'loading');
 
-      const analysisResult = await callMainModel(userMessage, contextContent || '');
+      const analysisResult = await callMainModel(userMessage, contextContent || '', onStreamChunk);
 
       if (!analysisResult || typeof analysisResult !== 'string') {
         console.warn('[四路路由] 页面分析返回无效内容');
@@ -2640,7 +2615,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
 }
 
 // ========== API 调用 ==========
-async function callAPI(prompt, contextContent) {
+async function callAPI(prompt, contextContent, onStreamChunk) {
   // 检查API配置是否完整
   if (!settings.apiUrl || !settings.apiKey) {
     throw new Error('主AI模型未配置，请在设置中填写API地址和密钥');
@@ -2651,7 +2626,7 @@ async function callAPI(prompt, contextContent) {
   if (!apiUrl) {
     throw new Error('API地址不能为空');
   }
-  
+
   const response = await fetch(`${apiUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -2681,7 +2656,7 @@ async function callAPI(prompt, contextContent) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let result = '';
-  let hasContent = false; // 标记是否收到过有效内容
+  let hasContent = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -2695,16 +2670,18 @@ async function callAPI(prompt, contextContent) {
         if (line.startsWith('data: ') && !line.includes('[DONE]')) {
           try {
             const data = JSON.parse(line.slice(6));
-
-            // 安全访问嵌套属性
             const content = data?.choices?.[0]?.delta?.content;
             if (content && typeof content === 'string') {
               result += content;
               hasContent = true;
-              updateLastMessage(result);
+              // 实时流式输出到bubble
+              if (onStreamChunk) {
+                onStreamChunk(result);
+              } else {
+                updateLastMessage(result);
+              }
             }
           } catch (parseError) {
-            // 忽略单个数据解析错误，继续处理其他行
             console.warn('[流式响应] 解析数据行失败:', parseError.message);
           }
         }
@@ -2714,7 +2691,6 @@ async function callAPI(prompt, contextContent) {
     }
   }
 
-  // 如果没有收到任何内容，返回提示信息
   if (!hasContent || !result || result.trim() === '') {
     console.warn('[流式响应] 未收到有效内容');
     return '（AI未返回有效内容，请检查API配置或重试）';
@@ -2798,11 +2774,11 @@ async function callOllama(prompt, contextContent) {
 /**
  * 调用主AI模型（封装原有逻辑）
  */
-async function callMainModel(prompt, contextContent) {
+async function callMainModel(prompt, contextContent, onStreamChunk) {
   if (settings.apiType === 'ollama') {
     return await callOllama(prompt, contextContent);
   } else {
-    return await callAPI(prompt, contextContent);
+    return await callAPI(prompt, contextContent, onStreamChunk);
   }
 }
 
@@ -3135,8 +3111,24 @@ async function sendMessage() {
       updateThinkingTitle('💭 正在思考如何回答...');
     }
 
-    // 使用智能路由（传入已判断的intent，避免重复检测）
-    const fastgptResult = await processMessageWithFastGPT(text, contextContent, finalIntent);
+    // ===== 流式输出改造（参考 workbuddy）=====
+    // 思考过程仍在更新的同时，提前创建 answer area，让流式 chunk 实时填充 bubble
+    const bubble = createAnswerArea();
+    let streamContent = '';
+
+    // 流式回调：API 每返回一段 chunk 就实时更新 bubble（用 textContent 累积，避免 markdown 半标签问题）
+    const onStreamChunk = (content) => {
+      streamContent = content || '';
+      if (bubble) {
+        bubble.textContent = streamContent;
+        bubble.style.opacity = '1';
+        const container = document.getElementById('chatContainer');
+        if (container) container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    // 使用智能路由（传入已判断的intent + onStreamChunk 回调，实现流式输出）
+    const fastgptResult = await processMessageWithFastGPT(text, contextContent, finalIntent, onStreamChunk);
 
     removeTypingIndicator();
 
@@ -3153,31 +3145,24 @@ async function sendMessage() {
       (fastgptResult.source ? `<br/>数据来源: ${fastgptResult.source}` : '')
     );
 
-    const aiText = fastgptResult.text || '（AI未返回内容）';
-
-    // 完成思考过程（打勾），此时才创建answer bubble
+    // 完成思考过程（打勾）
     completeThinkingProcess();
 
-    // 思考完成后才创建bubble（之前是不显示的，避免空白色椭圆）
-    const bubble = createAnswerArea();
+    // 优先使用 API 返回的完整文本，否则回退到流式累积内容
+    const aiText = fastgptResult.text || streamContent || '（AI未返回内容）';
 
     if (bubble) {
-      // 渲染markdown（markdown后可能有HTML标签，用淡入效果）
-      const renderedContent = fastgptResult.isHtml ? aiText : renderMarkdown(aiText);
-      const isRichContent = fastgptResult.isHtml || (aiText.includes('#') || aiText.includes('**') || aiText.includes('- ') || aiText.includes('1.') || aiText.includes('['));
-
-      if (isRichContent) {
-        // 富文本（markdown渲染后有HTML）- 直接淡入
+      // 流式结束后：用 markdown 重新渲染最终内容（替换流式过程中的纯文本）
+      if (fastgptResult.isHtml) {
+        // OA流程卡片等 HTML 内容 - 直接显示
+        bubble.innerHTML = aiText;
+        bubble.style.opacity = '1';
+      } else {
+        // markdown 内容 - 重新渲染（带淡入效果）
         bubble.style.opacity = '0';
-        bubble.innerHTML = renderedContent;
+        bubble.innerHTML = renderMarkdown(aiText);
         bubble.style.transition = 'opacity 0.3s ease';
         requestAnimationFrame(() => { bubble.style.opacity = '1'; });
-      } else {
-        // 纯文本 - 打字机流式效果
-        typeWriterEffect(bubble, aiText, false, () => {
-          const container = document.getElementById('chatContainer');
-          if (container) container.scrollTop = container.scrollHeight;
-        });
       }
 
       // 如果使用了FastGPT知识库或OA流程，显示来源标签（追加到bubble后面，作为msgContent子元素）
