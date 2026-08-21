@@ -30,10 +30,10 @@ echo ""
 # ============================================
 echo "📁 正在打包扩展文件..."
 
-cd "${EXTENSION_DIR}"
+# 从项目根目录打包，确保 zip 内部包含 extension/ 文件夹
+cd "${PROJECT_ROOT}"
 
-# 排除不需要的文件（如 .DS_Store 等）
-zip -r "${OUTPUT_DIR}/leapmotor-ai-assistant-v${VERSION}.zip" . \
+zip -r "${OUTPUT_DIR}/leapmotor-ai-assistant-v${VERSION}.zip" extension/ \
     -x "*.DS_Store" \
     -x "__MACOSX/*" \
     -x "*.git/*" \
