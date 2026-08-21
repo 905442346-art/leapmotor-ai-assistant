@@ -5243,8 +5243,14 @@ async function checkForUpdates(silent = false) {
         localStorage.setItem('lastUpdateCheckTime', Date.now());
 
         if (!silent) {
-          // 显示更新弹窗
-          showUpdateAvailableModal(releaseInfo);
+          // 热更新已启用：直接打开热更新窗口，跳过modal
+          if (HOT_UPDATE.isEnabled()) {
+            showUpdateStatus(`⚡ 发现新版本 v${releaseInfo.tag_name}，正在自动热更新...`, 'info');
+            doHotUpdate(updateInfoCache);
+          } else {
+            // 热更新未启用：显示弹窗让用户选择
+            showUpdateAvailableModal(releaseInfo);
+          }
         } else {
           // 静默模式：只在状态栏显示小提示
           showUpdateStatus(`发现新版本 v${releaseInfo.tag_name}`, 'success');
@@ -5764,9 +5770,26 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.1</span>
+          <span class="changelog-version-number">v1.5.2</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🚀 热更新全面升级</h5>
+          <ul>
+            <li><strong>真正的全自动热更新</strong> - 检测到新版本后自动打开更新窗口、下载ZIP、解压覆盖、重载扩展，全程无需用户干预</li>
+            <li><strong>改用 GitHub Release ZIP 下载</strong> - 替换 jsDelivr CDN 逐文件下载方案，直接下载完整 ZIP 包并解压，更稳定可靠</li>
+            <li><strong>内置 ZIP 解析器</strong> - 纯 JavaScript 实现 ZIP 格式解析和 deflate 解压，无需第三方库</li>
+            <li><strong>真实下载进度</strong> - 显示下载百分比、已下载大小和总大小</li>
+            <li><strong>跳过更新弹窗</strong> - 热更新已启用时不再显示弹窗让用户选择，直接开始更新</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.1</span>
+          <span class="changelog-version-date">2026-08-21</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🐛 Bug 修复</h5>
