@@ -5789,14 +5789,27 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.5</span>
+          <span class="changelog-version-number">v1.5.6</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🔥 紧急修复</h5>
+          <ul>
+            <li><strong>修复热更新文件写入损坏</strong> - 修复热更新后CSS/JS文件被写坏导致Chrome报"不是UTF-8编码"的严重bug。根因是stored（无压缩）文件提取时ArrayBuffer.slice(0)错误复制了整个ZIP的二进制垃圾数据而非文件内容，现已改为正确的offset+length切片</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.5</span>
+          <span class="changelog-version-date">2026-08-21</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 体验优化</h5>
           <ul>
-            <li><strong>修复打开时黑屏闪烁</strong> - 彻底解决唤起助手时侧边栏短暂黑屏的问题。iframe初始背景改为浅色，CSS默认主题改为浅色，新增theme-init.js在CSS加载前同步设置主题</li>
+            <li><strong>修复打开时黑屏闪烁</strong> - 彻底解决唤起助手时侧边栏短暂黑屏的问题</li>
             <li><strong>iframe淡入加载</strong> - iframe完全加载后才显示，避免加载过程中的内容闪烁</li>
           </ul>
         </div>

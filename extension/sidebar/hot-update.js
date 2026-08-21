@@ -281,10 +281,14 @@ async function startUpdate(dirHandle) {
       // 解压文件数据
       let fileData;
       if (file.compMethod === 0) {
-        // 无压缩（stored）
-        fileData = zipData.subarray(file.dataOffset, file.dataOffset + file.compSize);
+        // 无压缩（stored）—— subarray 返回底层 buffer 的视图，必须复制独立副本
+        // 不能用 fileData.buffer.slice(0)，因为 buffer 是整个 ZIP 的 ArrayBuffer
+        fileData = new Uint8Array(zipData.buffer.slice(
+          zipData.byteOffset + file.dataOffset,
+          zipData.byteOffset + file.dataOffset + file.compSize
+        ));
       } else if (file.compMethod === 8) {
-        // deflate 压缩
+        // deflate 压缩——inflate 返回新的独立 Uint8Array
         fileData = await inflate(zipData, file.dataOffset, file.compSize);
       } else {
         console.warn(`[热更新] 跳过不支持的压缩方法: ${file.compMethod} (${file.name})`);
@@ -292,8 +296,8 @@ async function startUpdate(dirHandle) {
         continue;
       }
 
-      // 写入目录
-      await writeFile(dirHandle, relPath, fileData.buffer.slice(0));
+      // 写入目录（fileData 现在是独立的 ArrayBuffer，buffer 就是文件本身）
+      await writeFile(dirHandle, relPath, fileData.buffer);
       written++;
     }
 
