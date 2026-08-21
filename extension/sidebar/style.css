@@ -3142,6 +3142,14 @@ body {
   background: rgba(255, 167, 38, 0.08);
 }
 
+.hot-update-status {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  min-height: 16px;
+}
+
 /* ========== 更新弹窗通用样式 ========== */
 .update-modal {
   position: fixed;

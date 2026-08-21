@@ -299,7 +299,7 @@
               </div>
               <div class="about-info">
                 <h3>零跑AI助手</h3>
-                <p class="version-text">版本 <strong id="currentVersionDisplay">v1.3.2</strong></p>
+                <p class="version-text">版本 <strong id="currentVersionDisplay">v1.4.0</strong></p>
                 <p class="build-info">基于零跑汽车品牌设计</p>
               </div>
             </div>
@@ -314,6 +314,7 @@
             </div>
 
             <div id="updateStatusText" class="update-status-text"></div>
+            <div id="hotUpdateStatus" class="hot-update-status"></div>
           </div>
 
           <div class="setting-group about-links-group">
@@ -593,8 +594,15 @@
         <div class="update-footer">
           <button id="skipUpdateBtn" class="btn btn-text">稍后提醒</button>
           <button id="downloadUpdateBtn" class="btn btn-primary">
-            📥 立即下载
+            📥 手动下载ZIP
           </button>
+          <button id="hotUpdateBtn" class="btn btn-primary hidden" style="background:linear-gradient(135deg,#8FE040,#5bc216);font-weight:700;">
+            ⚡ 一键热更新
+          </button>
+        </div>
+
+        <div id="hotUpdateHint" class="hot-update-hint hidden" style="padding:8px 16px 12px;font-size:11px;color:var(--text-tertiary);line-height:1.6;">
+          💡 「一键热更新」将自动下载并覆盖本地文件，无需手动解压。首次使用需选择 extension 目录授权。
         </div>
       </div>
     </div>

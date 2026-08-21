@@ -4751,6 +4751,181 @@ let currentVersion = ''; // 从manifest读取
 let lastCheckTime = 0; // 上次检查时间
 let updateInfoCache = null; // 缓存的更新信息
 
+// ========== 热更新模块（File System Access API）==========
+const HOT_UPDATE = {
+  DB_NAME: 'leapmotor-hot-update',
+  STORE_NAME: 'handles',
+  DIR_KEY: 'extension-dir-handle',
+  GITHUB_BASE: 'https://cdn.jsdelivr.net/gh/905442346-art/leapmotor-ai-assistant@',
+  // 需要热更新的文件列表（相对于extension目录）
+  FILES: [
+    'sidebar/app.js',
+    'sidebar/style.css',
+    'sidebar/index.html',
+    'background.js',
+    'content-scripts/content.js',
+    'content-scripts/content.css',
+    'manifest.json',
+  ],
+  dirHandle: null,
+
+  /** 初始化：从IDB恢复目录句柄 */
+  async init() {
+    if (!window.showDirectoryPicker) {
+      console.log('[热更新] ⚠️ 当前浏览器不支持 File System Access API');
+      return;
+    }
+    try {
+      this.dirHandle = await this._loadHandle();
+      if (this.dirHandle) {
+        console.log('[热更新] ✅ 已恢复扩展目录句柄:', this.dirHandle.name);
+      }
+    } catch (err) {
+      console.warn('[热更新] 恢复句柄失败:', err.message);
+    }
+  },
+
+  /** 是否已启用（有保存的目录句柄） */
+  isEnabled() {
+    return !!this.dirHandle;
+  },
+
+  /** 浏览器是否支持热更新 */
+  isSupported() {
+    return typeof window.showDirectoryPicker === 'function';
+  },
+
+  /** 选择 extension 目录并保存句柄 */
+  async selectDirectory() {
+    if (!this.isSupported()) {
+      throw new Error('当前浏览器不支持热更新，请使用 Chrome 86+');
+    }
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+
+    // 验证是否是零跑AI助手的extension目录
+    try {
+      const manifestHandle = await handle.getFileHandle('manifest.json');
+      const file = await manifestHandle.getFile();
+      const text = await file.text();
+      const manifest = JSON.parse(text);
+      if (manifest.name !== '零跑AI助手') {
+        throw new Error(`请选择「零跑AI助手」的 extension 目录（当前选中: ${manifest.name || '未知'}）`);
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'NotFoundError') {
+        throw new Error('该目录下没有 manifest.json，请选择 extension 文件夹');
+      }
+      throw e;
+    }
+
+    this.dirHandle = handle;
+    await this._saveHandle(handle);
+    console.log('[热更新] ✅ 已保存扩展目录:', handle.name);
+    return true;
+  },
+
+  /** 验证目录写入权限 */
+  async verifyPermission() {
+    if (!this.dirHandle) return false;
+    const perm = await this.dirHandle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') return true;
+    const req = await this.dirHandle.requestPermission({ mode: 'readwrite' });
+    return req === 'granted';
+  },
+
+  /** 执行热更新：逐个下载文件并写入目录 */
+  async performUpdate(version, onProgress) {
+    if (!this.dirHandle) throw new Error('未设置扩展目录');
+    if (!(await this.verifyPermission())) throw new Error('未获得目录写入权限');
+
+    const total = this.FILES.length;
+    for (let i = 0; i < total; i++) {
+      const filePath = this.FILES[i];
+      if (onProgress) onProgress(i, total, filePath);
+
+      const url = this.GITHUB_BASE + `v${version}/extension/${filePath}`;
+      console.log(`[热更新] 📥 下载 [${i + 1}/${total}]: ${filePath}`);
+
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`下载失败 ${filePath}: HTTP ${resp.status}`);
+
+      const buffer = await resp.arrayBuffer();
+      await this._writeFile(this.dirHandle, filePath, buffer);
+    }
+
+    if (onProgress) onProgress(total, total, '完成');
+    console.log('[热更新] ✅ 所有文件已更新');
+    return true;
+  },
+
+  /** 清除热更新配置（取消授权的目录） */
+  async disable() {
+    this.dirHandle = null;
+    await this._clearHandle();
+  },
+
+  // ---- 内部方法 ----
+
+  /** 递归写入文件到目录 */
+  async _writeFile(dirHandle, relativePath, buffer) {
+    const parts = relativePath.split('/');
+    const fileName = parts.pop();
+    let dir = dirHandle;
+    for (const part of parts) {
+      dir = await dir.getDirectoryHandle(part, { create: true });
+    }
+    const fileHandle = await dir.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(buffer);
+    await writable.close();
+  },
+
+  // ---- IndexedDB 操作 ----
+
+  _openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(this.DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore(this.STORE_NAME);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async _saveHandle(handle) {
+    const db = await this._openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.STORE_NAME, 'readwrite');
+      tx.objectStore(this.STORE_NAME).put(handle, this.DIR_KEY);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  },
+
+  async _loadHandle() {
+    const db = await this._openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.STORE_NAME, 'readonly');
+      const req = tx.objectStore(this.STORE_NAME).get(this.DIR_KEY);
+      req.onsuccess = () => { db.close(); resolve(req.result || null); };
+      req.onerror = () => { db.close(); reject(req.error); };
+    });
+  },
+
+  async _clearHandle() {
+    try {
+      const db = await this._openDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this.STORE_NAME, 'readwrite');
+        tx.objectStore(this.STORE_NAME).delete(this.DIR_KEY);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); resolve(); };
+      });
+    } catch (e) { /* 忽略 */ }
+  },
+};
+
 /**
  * 初始化在线自动更新系统
  */
@@ -4766,6 +4941,11 @@ function initAutoUpdateSystem() {
   if (versionDisplay) {
     versionDisplay.textContent = `v${currentVersion}`;
   }
+
+  // 初始化热更新模块
+  HOT_UPDATE.init().then(() => {
+    updateHotUpdateUI();
+  });
 
   // 绑定事件
   bindUpdateEvents();
@@ -4857,6 +5037,14 @@ function bindUpdateModalEvents() {
   if (downloadBtn) {
     downloadBtn.addEventListener('click', () => {
       startDownloadUpdate(updateInfoCache);
+    });
+  }
+
+  // 热更新按钮
+  const hotUpdateBtn = document.getElementById('hotUpdateBtn');
+  if (hotUpdateBtn) {
+    hotUpdateBtn.addEventListener('click', () => {
+      doHotUpdate(updateInfoCache);
     });
   }
 }
@@ -5120,6 +5308,34 @@ function showUpdateAvailableModal(releaseInfo) {
     forceNoticeEl.classList.remove('hidden');
   }
 
+  // 根据热更新状态调整按钮
+  const hotUpdateBtn = document.getElementById('hotUpdateBtn');
+  const downloadBtn = document.getElementById('downloadUpdateBtn');
+  const hotUpdateHint = document.getElementById('hotUpdateHint');
+
+  if (HOT_UPDATE.isEnabled()) {
+    // 热更新已启用：显示"一键热更新"按钮，隐藏普通下载
+    if (hotUpdateBtn) hotUpdateBtn.classList.remove('hidden');
+    if (downloadBtn) {
+      downloadBtn.classList.add('hidden');
+      downloadBtn.textContent = '📥 手动下载ZIP';
+      downloadBtn.style.cssText = 'background:transparent;border:1px solid var(--glass-border);color:var(--text-secondary);font-size:12px;padding:8px 14px;';
+    }
+    if (hotUpdateHint) hotUpdateHint.classList.remove('hidden');
+    if (downloadBtn) downloadBtn.classList.remove('hidden'); // 仍显示作为备选
+  } else {
+    // 热更新未启用：显示普通下载按钮 + 提示开启热更新
+    if (hotUpdateBtn) {
+      hotUpdateBtn.classList.remove('hidden');
+      hotUpdateBtn.textContent = '⚡ 一键热更新（推荐）';
+    }
+    if (downloadBtn) {
+      downloadBtn.textContent = '📥 手动下载ZIP';
+      downloadBtn.style.cssText = 'background:transparent;border:1px solid var(--glass-border);color:var(--text-secondary);font-size:12px;padding:8px 14px;';
+    }
+    if (hotUpdateHint) hotUpdateHint.classList.remove('hidden');
+  }
+
   modal.classList.remove('hidden');
 }
 
@@ -5162,6 +5378,143 @@ function formatChangelogMarkdown(markdown) {
 function closeUpdateAvailableModal() {
   const modal = document.getElementById('updateAvailableModal');
   if (modal) modal.classList.add('hidden');
+}
+
+/**
+ * 执行热更新（一键自动更新）
+ */
+async function doHotUpdate(updateData) {
+  if (!updateData || !updateData.version) {
+    showUpdateStatus('❌ 版本信息无效', 'error');
+    return;
+  }
+
+  const version = updateData.version.replace(/^v/, '');
+  console.log('[热更新] 🚀 开始热更新到 v' + version);
+
+  // 关闭弹窗
+  closeUpdateAvailableModal();
+
+  // 如果热更新未启用，先让用户选择目录
+  if (!HOT_UPDATE.isEnabled()) {
+    showUpdateStatus('📁 请在弹窗中选择 extension 目录...', 'info');
+    try {
+      await HOT_UPDATE.selectDirectory();
+      updateHotUpdateUI();
+    } catch (err) {
+      console.error('[热更新] 选择目录失败:', err);
+      if (err.name === 'AbortError') {
+        showUpdateStatus('已取消选择目录', 'info');
+      } else {
+        showUpdateStatus(`❌ ${err.message}`, 'error');
+      }
+      return;
+    }
+  }
+
+  // 显示热更新进度
+  const statusEl = document.getElementById('updateStatusText');
+  if (statusEl) {
+    statusEl.className = 'update-status-text info';
+    statusEl.innerHTML = `
+      <div style="padding:12px;border-radius:10px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);">
+        <div style="font-weight:600;margin-bottom:8px;">⚡ 热更新中 - v${version}</div>
+        <div id="hotUpdateProgress" style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+          <div>准备下载...</div>
+        </div>
+        <div style="margin-top:10px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
+          <div id="hotUpdateBar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--accent),#a8f060);transition:width 0.3s;"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  try {
+    await HOT_UPDATE.performUpdate(version, (index, total, filePath) => {
+      const progressEl = document.getElementById('hotUpdateProgress');
+      const barEl = document.getElementById('hotUpdateBar');
+      const pct = Math.round((index / total) * 100);
+
+      if (progressEl) {
+        if (index < total) {
+          progressEl.innerHTML = `
+            <div>正在下载并覆盖文件... [${index + 1}/${total}]</div>
+            <div style="color:var(--text-tertiary);font-size:11px;margin-top:2px;">📄 ${filePath}</div>
+          `;
+        } else {
+          progressEl.innerHTML = '<div>✅ 所有文件已更新，正在重新加载扩展...</div>';
+        }
+      }
+      if (barEl) barEl.style.width = pct + '%';
+    });
+
+    // 更新完成，延迟1秒后reload扩展
+    const barEl = document.getElementById('hotUpdateBar');
+    if (barEl) barEl.style.width = '100%';
+
+    showUpdateStatus('✅ 热更新完成！正在自动重启扩展...', 'success');
+
+    setTimeout(() => {
+      console.log('[热更新] 🔄 重新加载扩展...');
+      chrome.runtime.reload();
+    }, 1500);
+
+  } catch (err) {
+    console.error('[热更新] ❌ 更新失败:', err);
+    showUpdateStatus(`❌ 热更新失败: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * 更新关于页面的热更新状态显示
+ */
+function updateHotUpdateUI() {
+  const statusEl = document.getElementById('hotUpdateStatus');
+  if (!statusEl) return;
+
+  if (!HOT_UPDATE.isSupported()) {
+    statusEl.innerHTML = '<span style="color:var(--text-tertiary);font-size:11px;">⚠️ 当前浏览器不支持热更新</span>';
+    return;
+  }
+
+  if (HOT_UPDATE.isEnabled()) {
+    statusEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;">
+        <span style="color:var(--accent);font-weight:600;">⚡ 热更新已启用</span>
+        <span style="color:var(--text-tertiary);">| 点击「检查更新」可自动覆盖更新</span>
+        <button id="disableHotUpdateBtn" style="margin-left:auto;padding:2px 8px;font-size:11px;background:transparent;border:1px solid var(--glass-border);border-radius:4px;color:var(--text-tertiary);cursor:pointer;">关闭</button>
+      </div>
+    `;
+    const disableBtn = document.getElementById('disableHotUpdateBtn');
+    if (disableBtn) {
+      disableBtn.addEventListener('click', async () => {
+        await HOT_UPDATE.disable();
+        updateHotUpdateUI();
+        showUpdateStatus('热更新已关闭', 'info');
+      });
+    }
+  } else {
+    statusEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;">
+        <span style="color:var(--text-tertiary);">热更新未启用</span>
+        <button id="enableHotUpdateBtn" style="padding:2px 8px;font-size:11px;background:rgba(143,224,64,0.12);border:1px solid rgba(143,224,64,0.3);border-radius:4px;color:var(--accent);cursor:pointer;">⚡ 开启热更新</button>
+      </div>
+    `;
+    const enableBtn = document.getElementById('enableHotUpdateBtn');
+    if (enableBtn) {
+      enableBtn.addEventListener('click', async () => {
+        try {
+          await HOT_UPDATE.selectDirectory();
+          updateHotUpdateUI();
+          showUpdateStatus('✅ 热更新已开启！以后点击「检查更新」即可自动更新', 'success');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            showUpdateStatus(`❌ ${err.message}`, 'error');
+          }
+        }
+      });
+    }
+  }
 }
 
 /**
@@ -5381,9 +5734,30 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.4.0</span>
+          <span class="changelog-version-date">2026-08-21</span>
+          <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 新功能</h5>
+          <ul>
+            <li><strong>真正的热更新！</strong> - 基于 File System Access API，首次选择 extension 目录授权后，后续更新只需点击「一键热更新」，自动下载最新文件覆盖本地目录并重载扩展，无需手动解压覆盖</li>
+            <li><strong>热更新状态管理</strong> - 关于页面显示热更新状态，支持开启/关闭</li>
+            <li><strong>更新弹窗热更新按钮</strong> - 发现新版本时，弹窗中同时显示「一键热更新」和「手动下载ZIP」两个选项</li>
+          </ul>
+          <h5 style="margin:16px 0 8px;color:var(--text-primary)">🔧 技术实现</h5>
+          <ul>
+            <li>使用 IndexedDB 持久化存储 DirectoryHandle，重启后自动恢复</li>
+            <li>从 jsDelivr CDN 逐个下载文件并写入本地目录</li>
+            <li>通过 chrome.runtime.reload() 实现更新后自动重载</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
           <span class="changelog-version-number">v1.3.2</span>
           <span class="changelog-version-date">2026-08-20</span>
-          <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🔧 改进优化</h5>
