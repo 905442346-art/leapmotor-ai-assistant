@@ -232,14 +232,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'OPEN_HOT_UPDATE_WINDOW') {
     const version = request.version || '';
     const url = chrome.runtime.getURL(`sidebar/hot-update.html?v=${Date.now()}&version=${encodeURIComponent(version)}`);
+    // Service Worker环境无screen对象，去掉left/top让Chrome自动居中
     chrome.windows.create({
       url: url,
       type: 'popup',
       width: 460,
       height: 420,
       focused: true,
-      left: Math.round((screen.availWidth - 460) / 2),
-      top: Math.round((screen.availHeight - 420) / 2),
     }, (win) => {
       if (chrome.runtime.lastError) {
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
