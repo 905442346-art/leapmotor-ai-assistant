@@ -65,14 +65,20 @@ async function setupOnly() {
       }
       await saveHandle(handle);
 
+      // 通知sidebar热更新已授权
+      try {
+        chrome.storage.local.set({ hotUpdateAuthorized: Date.now() });
+      } catch(e) {}
+
       area.innerHTML = `
         <div class="success-box">
           <div class="success-icon">✅</div>
           <div class="success-title">授权成功！</div>
           <div style="font-size:12px;color:#999;margin-bottom:8px;">热更新已开启，以后点击「检查更新」即可一键自动更新。</div>
-          <button class="btn btn-primary" onclick="window.close()">关闭窗口</button>
+          <button id="closeAfterSuccess" class="btn btn-primary">关闭窗口</button>
         </div>
       `;
+      document.getElementById('closeAfterSuccess').addEventListener('click', () => window.close());
       document.getElementById('num1').classList.add('done');
       document.getElementById('num1').textContent = '✓';
     } catch (err) {
@@ -269,8 +275,9 @@ function showError(msg) {
   const area = document.getElementById('actionArea');
   area.innerHTML = `
     <div class="error">❌ ${msg.replace(/\n/g, '<br>')}</div>
-    <button class="btn btn-secondary" onclick="window.close()" style="margin-top:12px;">关闭</button>
+    <button id="closeErrorBtn" class="btn btn-secondary" style="margin-top:12px;">关闭</button>
   `;
+  document.getElementById('closeErrorBtn').addEventListener('click', () => window.close());
 }
 
 // ---- IndexedDB ----

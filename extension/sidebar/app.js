@@ -4903,10 +4903,21 @@ const HOT_UPDATE = {
   DIR_KEY: 'extension-dir-handle',
   _cachedEnabled: null,
 
-  /** 初始化：检测是否已有授权目录（通过IDB） */
+  /** 初始化：检测是否已有授权目录（优先读chrome.storage.local，popup间实时共享） */
   async init() {
     try {
-      this._cachedEnabled = await this._hasHandle();
+      // 从chrome.storage.local读取状态（popup授权后会写入此处，实时同步）
+      const data = await chrome.storage.local.get('hotUpdateAuthorized');
+      if (data.hotUpdateAuthorized) {
+        this._cachedEnabled = true;
+      } else {
+        // 兼容旧版本：从IDB检测
+        this._cachedEnabled = await this._hasHandle();
+        // 如果IDB有但storage没标记，补上标记
+        if (this._cachedEnabled) {
+          await chrome.storage.local.set({ hotUpdateAuthorized: Date.now() });
+        }
+      }
       console.log('[热更新] 状态:', this._cachedEnabled ? '✅ 已启用（有授权目录）' : 'ℹ️ 未启用');
     } catch (err) {
       console.warn('[热更新] 检测状态失败:', err.message);
@@ -4924,6 +4935,17 @@ const HOT_UPDATE = {
   /** 是否已启用（之前授权过目录） */
   isEnabled() {
     return this._cachedEnabled === true;
+  },
+
+  /** 重新检测授权状态并刷新UI（popup授权后调用） */
+  async refresh() {
+    try {
+      const data = await chrome.storage.local.get('hotUpdateAuthorized');
+      this._cachedEnabled = !!data.hotUpdateAuthorized;
+      updateHotUpdateUI();
+    } catch(err) {
+      console.warn('[热更新] 刷新状态失败:', err.message);
+    }
   },
 
   /** 通过 background 打开热更新 popup 窗口 */
@@ -4955,6 +4977,7 @@ const HOT_UPDATE = {
         tx.onerror = () => { db.close(); resolve(); };
       });
       this._cachedEnabled = false;
+      await chrome.storage.local.remove('hotUpdateAuthorized');
     } catch (e) { /* 忽略 */ }
   },
 
@@ -5003,6 +5026,13 @@ function initAutoUpdateSystem() {
   // 初始化热更新模块
   HOT_UPDATE.init().then(() => {
     updateHotUpdateUI();
+  });
+
+  // 监听popup窗口授权成功的信号，自动刷新热更新状态
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.hotUpdateAuthorized) {
+      HOT_UPDATE.refresh();
+    }
   });
 
   // 绑定事件
@@ -5734,9 +5764,23 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.0</span>
+          <span class="changelog-version-number">v1.5.1</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🐛 Bug 修复</h5>
+          <ul>
+            <li><strong>修复热更新授权状态不刷新</strong> - 授权目录成功后，关于页面实时更新为"热更新已启用"，无需手动刷新</li>
+            <li><strong>修复关闭窗口按钮无效</strong> - 修复 Chrome 扩展 CSP 禁止内联 onclick 导致"关闭窗口"按钮无反应的问题</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.0</span>
+          <span class="changelog-version-date">2026-08-21</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 新功能</h5>
