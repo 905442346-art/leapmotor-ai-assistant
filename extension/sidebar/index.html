@@ -121,7 +121,7 @@
         </button>
         <button class="settings-tab" data-tab="knowledge">
           <span class="tab-icon">🧠</span>
-          <span class="tab-label">知识库</span>
+          <span class="tab-label">leaprag</span>
         </button>
         <button class="settings-tab" data-tab="shortcuts">
           <span class="tab-icon">⌨️</span>
@@ -220,12 +220,13 @@
           </div>
         </div>
 
-        <!-- ========== 知识库 (FastGPT) Tab ========= -->
+        <!-- ========== leaprag Tab ========= -->
         <div class="settings-tab-pane" id="tab-knowledge">
+          <!-- 启用智能路由开关 -->
           <div class="setting-group">
             <label>
               启用智能路由
-              <span class="setting-hint">开启后自动识别系统问题并调用知识库回答</span>
+              <span class="setting-hint">开启后自动识别系统问题并调用leaprag回答</span>
             </label>
             <label class="toggle-switch">
               <input type="checkbox" id="fastgptEnabled"/>
@@ -234,27 +235,43 @@
           </div>
 
           <div id="fastgptConfigSection" class="fastgpt-config-section">
-            <div class="config-info-box config-success">
-              <div class="info-icon">✅</div>
-              <div class="info-text">
-                <strong>公司知识库已预配置！</strong><br/>
-                系统问题（OA/HR/IT/制度流程等）将自动查询内部知识库回答。<br/>
-                数据全程内网传输，安全可靠。无需额外配置。
+            <!-- 平台跳转 -->
+            <div class="leaprag-header">
+              <div class="leaprag-header-info">
+                <span class="leaprag-logo">🧠</span>
+                <div>
+                  <div class="leaprag-title">leaprag 知识库平台</div>
+                  <div class="leaprag-desc">在公司内部平台创建和管理工作流，配置后可直接在此使用</div>
+                </div>
               </div>
+              <a href="https://ai.leapmotor.com/knowledge?view=knowledge" target="_blank" class="btn-leaprag-open">
+                🔗 打开 leaprag 平台
+              </a>
             </div>
 
-            <div class="setting-group fastgpt-status">
-              <label>FastGPT 工作流状态</label>
-              <div class="status-badge status-connected">
-                <span class="status-dot"></span>
-                已连接 - 零跑内部知识库
-              </div>
-              <span class="field-hint">API地址: https://aiflow.leapmotor.com/api<br/>应用ID: 6a4b7073b415c3419d9fb95d</span>
+            <!-- 工作流列表 -->
+            <div class="setting-group">
+              <label>已配置的工作流</label>
+              <div id="workflowList" class="workflow-list"></div>
             </div>
-          </div>
 
-          <div class="tab-footer-hint">
-            📚 知识库用于回答公司内部系统问题（OA审批、HR政策、IT支持等）
+            <!-- 添加自定义工作流 -->
+            <div class="workflow-add-section">
+              <div class="workflow-add-title">➕ 添加自定义工作流</div>
+              <div class="workflow-form-row">
+                <input type="text" id="wfName" placeholder="工作流名称（如：HR政策问答）" class="workflow-input"/>
+              </div>
+              <div class="workflow-form-row">
+                <input type="text" id="wfAppId" placeholder="应用ID（在leaprag平台获取）" class="workflow-input"/>
+              </div>
+              <div class="workflow-form-row">
+                <input type="password" id="wfApiKey" placeholder="API Key（在leaprag平台获取）" class="workflow-input"/>
+              </div>
+              <button id="addWorkflowBtn" class="btn btn-primary" style="width:100%;margin-top:6px;">添加工作流</button>
+              <div class="workflow-hint">
+                💡 在 leaprag 平台创建工作流后，复制应用ID和API Key填入上方即可
+              </div>
+            </div>
           </div>
         </div>
 
@@ -299,7 +316,7 @@
               </div>
               <div class="about-info">
                 <h3>零跑AI助手</h3>
-                <p class="version-text">版本 <strong id="currentVersionDisplay">v1.4.1</strong></p>
+                <p class="version-text">版本 <strong id="currentVersionDisplay">v1.5.0</strong></p>
                 <p class="build-info">基于零跑汽车品牌设计</p>
               </div>
             </div>

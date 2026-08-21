@@ -12,14 +12,56 @@ let uploadedFiles = [];
 let capturedPages = [];
 let activePageId = 'current';
 let selectedTabIds = new Set();
-// FastGPT 配置 - 已预配置，用户无需填写
+// leaprag 配置 - 预配置协同办公工作流，用户可自定义添加
 const FASTGPT_CONFIG = {
   enabled: true, // 默认启用智能路由
   apiUrl: 'https://aiflow.leapmotor.com/api',
-  apiKey: 'openapi-kQTdGDDkdnMvTNlR1aJYuMpoTwV9HQ9ckYU6LeVT6WsCODCphW4rRmUsU0wzTs',
-  workflowId: '6a4b7073b415c3419d9fb95d',
-  modelName: '' // 使用工作流默认模型
+  modelName: ''
 };
+
+// 内置工作流（协同办公）
+const BUILTIN_WORKFLOWS = [
+  {
+    id: 'wf_builtin_coop',
+    name: '协同办公',
+    appId: '6a4b7073b415c3419d9fb95d',
+    apiKey: 'openapi-kQTdGDDkdnMvTNlR1aJYuMpoTwV9HQ9ckYU6LeVT6WsCODCphW4rRmUsU0wzTs',
+    isDefault: true,
+    builtIn: true
+  }
+];
+
+// 用户自定义工作流（从localStorage加载）
+let customWorkflows = [];
+
+// 获取全部工作流（内置+自定义）
+function getAllWorkflows() {
+  return [...BUILTIN_WORKFLOWS, ...customWorkflows];
+}
+
+// 获取默认工作流
+function getDefaultWorkflow() {
+  const all = getAllWorkflows();
+  return all.find(w => w.isDefault) || all[0] || null;
+}
+
+// 加载用户自定义工作流
+function loadCustomWorkflows() {
+  const saved = localStorage.getItem('leaprag_workflows');
+  if (saved) {
+    try {
+      customWorkflows = JSON.parse(saved);
+    } catch(e) {
+      console.error('[leaprag] 加载自定义工作流失败:', e);
+      customWorkflows = [];
+    }
+  }
+}
+
+// 保存用户自定义工作流
+function saveCustomWorkflows() {
+  localStorage.setItem('leaprag_workflows', JSON.stringify(customWorkflows));
+}
 
 // 平台检测：Mac 或 Windows/Linux
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.includes('Macintosh');
@@ -1736,39 +1778,34 @@ async function detectIntent(userMessage) {
  * @param {string} question - 用户问题
  * @returns {Promise<{answer: string, sources: Array, success: boolean, error?: string}>}
  */
-async function callFastGPT(question, onStreamChunk) {
-  // 使用预配置的FastGPT常量（用户无需配置）
-  if (!FASTGPT_CONFIG.apiUrl || !FASTGPT_CONFIG.workflowId) {
+async function callFastGPT(question, onStreamChunk, workflow) {
+  // 使用传入的工作流，或回退到默认工作流
+  const wf = workflow || getDefaultWorkflow();
+  if (!FASTGPT_CONFIG.apiUrl || !wf) {
     console.error('[FastGPT] ❌ 配置缺失:', {
       hasApiUrl: !!FASTGPT_CONFIG.apiUrl,
-      hasWorkflowId: !!FASTGPT_CONFIG.workflowId,
-      hasApiKey: !!FASTGPT_CONFIG.apiKey
+      hasWorkflow: !!wf
     });
     return {
       answer: '',
       sources: [],
       success: false,
-      error: 'FastGPT服务未正确配置'
+      error: 'leaprag-工作流服务未正确配置'
     };
   }
 
   try {
-    // 构建API URL（FastGPT V4 标准接口 - 调用工作流/应用）
+    // 构建API URL
     if (!FASTGPT_CONFIG.apiUrl) {
-      throw new Error('FastGPT API地址未配置');
+      throw new Error('leaprag-工作流 API地址未配置');
     }
     const apiUrl = FASTGPT_CONFIG.apiUrl.replace(/\/$/, '');
     const chatUrl = `${apiUrl}/v1/chat/completions`;
 
     console.log('[FastGPT] 🚀 开始调用...');
     console.log('[FastGPT] 调用URL:', chatUrl);
-    console.log('[FastGPT] 工作流ID:', FASTGPT_CONFIG.workflowId);
+    console.log('[FastGPT] 工作流:', wf.name, 'appId:', wf.appId);
     console.log('[FastGPT] 用户问题:', question);
-    console.log('[FastGPT] 完整配置:', JSON.stringify({
-      apiUrl: FASTGPT_CONFIG.apiUrl,
-      workflowId: FASTGPT_CONFIG.workflowId,
-      hasApiKey: !!FASTGPT_CONFIG.apiKey
-    }));
 
     // 记录调用开始时间
     const startTime = Date.now();
@@ -1778,10 +1815,10 @@ async function callFastGPT(question, onStreamChunk) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${FASTGPT_CONFIG.apiKey}`
+        'Authorization': `Bearer ${wf.apiKey}`
       },
       body: JSON.stringify({
-        model: FASTGPT_CONFIG.modelName || FASTGPT_CONFIG.workflowId,
+        model: FASTGPT_CONFIG.modelName || wf.appId,
         messages: [
           {
             role: 'user',
@@ -1801,7 +1838,7 @@ async function callFastGPT(question, onStreamChunk) {
       const errorText = await response.text().catch(() => '');
       console.error(`[FastGPT] ❌ HTTP错误 ${response.status}:`, errorText.substring(0, 500));
 
-      let errorMsg = `FastGPT HTTP错误 (${response.status})`;
+      let errorMsg = `leaprag-工作流 HTTP错误 (${response.status})`;
       try {
         const errorJson = JSON.parse(errorText);
         errorMsg = errorJson.error?.message || errorJson.message || errorJson.error || errorMsg;
@@ -1813,10 +1850,10 @@ async function callFastGPT(question, onStreamChunk) {
         }
       }
 
-      if (response.status === 401) errorMsg = 'FastGPT API Key无效或已过期';
-      else if (response.status === 403) errorMsg = 'FastGPT访问被拒绝（可能IP白名单限制）';
-      else if (response.status === 404) errorMsg = 'FastGPT工作流ID不存在或已删除';
-      else if (response.status >= 500) errorMsg = 'FastGPT服务器内部错误，请稍后重试';
+      if (response.status === 401) errorMsg = 'leaprag-工作流 API Key无效或已过期';
+      else if (response.status === 403) errorMsg = 'leaprag-工作流访问被拒绝（可能IP白名单限制）';
+      else if (response.status === 404) errorMsg = 'leaprag-工作流ID不存在或已删除';
+      else if (response.status >= 500) errorMsg = 'leaprag-工作流服务器内部错误，请稍后重试';
 
       return { answer: '', sources: [], success: false, error: errorMsg };
     }
@@ -1865,7 +1902,7 @@ async function callFastGPT(question, onStreamChunk) {
     console.log('[FastGPT] ✅ 流式完成，内容长度:', result.length);
 
     if (!hasContent || !result || result.trim() === '') {
-      return { answer: '', sources: [], success: false, error: '知识库未返回有效内容' };
+      return { answer: '', sources: [], success: false, error: 'leaprag-工作流未返回有效内容' };
     }
 
     return { answer: result.trim(), sources, success: true };
@@ -1887,7 +1924,7 @@ async function callFastGPT(question, onStreamChunk) {
         suggestion: '检查manifest.json的host_permissions或使用background.js代理'
       });
     } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
-      errorMsg = '请求超时：FastGPT服务器响应时间过长';
+      errorMsg = '请求超时：leaprag-工作流服务器响应时间过长';
     } else if (errorMessage.includes('CORS') || errorMessage.includes('cross-origin')) {
       errorMsg = 'CORS跨域错误：浏览器阻止了跨域请求（需要通过background.js中转）';
     } else if (errorMessage.includes('AbortError')) {
@@ -2546,7 +2583,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
     // ====== 路由1：系统问题 → FastGPT知识库 ======
     case 'system':
       console.log(`[四路路由] 📋 路由到【系统问题】${intent.systemType ? '(' + intent.systemType + ')' : ''} → FastGPT工作流`);
-      setStatus('正在查询公司知识库...', 'loading');
+      setStatus('正在查询leaprag知识库...', 'loading');
 
       const fastgptResult = await callFastGPT(userMessage, onStreamChunk);
 
@@ -2555,7 +2592,7 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
         return {
           text: fastgptResult.answer,
           source: 'fastgpt_knowledge_base',
-          sources: fastgptResult.sources.length > 0 ? fastgptResult.sources : [{ title: '公司知识库' }],
+          sources: fastgptResult.sources.length > 0 ? fastgptResult.sources : [{ title: 'leaprag知识库' }],
           usedFastGPT: true,
           routeType: 'system'
         };
@@ -2960,7 +2997,7 @@ function completeThinkingProcess() {
 function getRouteDisplayInfo(routeType) {
   const routeMap = {
     oa_process: { name: 'OA流程查询', badgeClass: 'oa_process' },
-    system: { name: '系统问题(知识库)', badgeClass: 'system' },
+    system: { name: '系统问题(leaprag)', badgeClass: 'system' },
     page_analysis: { name: '页面分析', badgeClass: 'page_analysis' },
     general_chat: { name: '通用问答', badgeClass: 'general_chat' }
   };
@@ -3102,8 +3139,8 @@ async function sendMessage() {
       addThinkingStep('fetch', '正在调用OA流程接口获取可发起的审批流程...');
       updateThinkingTitle('💭 正在查询OA流程...');
     } else if (finalIntent.type === 'system') {
-      addThinkingStep('fetch', '正在连接零跑内部知识库(FastGPT)...');
-      updateThinkingTitle('💭 正在查询知识库...');
+      addThinkingStep('fetch', '正在连接leaprag-工作流...');
+      updateThinkingTitle('💭 正在查询leaprag知识库...');
     } else if (finalIntent.type === 'page_analysis') {
       addThinkingStep('fetch', contextContent ? '正在分析页面内容...' : '等待页面内容...');
       updateThinkingTitle('💭 正在分析页面...');
@@ -3173,7 +3210,7 @@ async function sendMessage() {
         } else if (fastgptResult.routeType === 'oa_process') {
           appendSourceTag(msgContent, [{ title: 'OA流程数据库' }]);
         } else if (fastgptResult.usedFastGPT) {
-          appendSourceTag(msgContent, [{ title: '公司知识库' }]);
+          appendSourceTag(msgContent, [{ title: 'leaprag知识库' }]);
         }
       }
     } else {
@@ -3219,7 +3256,7 @@ function showRAGSourceTag(bubbleElement, sources) {
     const sourceNames = sources.map(s => s.title || s.filename || s.name || '文档').slice(0, 3).join(', ');
     tag.textContent = `📚 来源: ${sourceNames}${sources.length > 3 ? ' 等' + sources.length + '篇' : ''}`;
   } else {
-    tag.textContent = '📚 来自知识库';
+    tag.textContent = '📚 来自leaprag';
   }
 
   bubbleElement.appendChild(tag);
@@ -3236,7 +3273,7 @@ function appendSourceTag(msgContent, sources) {
     const sourceNames = sources.map(s => s.title || s.filename || s.name || '文档').slice(0, 3).join(', ');
     tag.textContent = `📚 来源: ${sourceNames}${sources.length > 3 ? ' 等' + sources.length + '篇' : ''}`;
   } else {
-    tag.textContent = '📚 来自知识库';
+    tag.textContent = '📚 来自leaprag';
   }
 
   msgContent.appendChild(tag);
@@ -3924,15 +3961,14 @@ function initFastGPTConfigUI() {
   const configSection = document.getElementById('fastgptConfigSection');
 
   if (enabledCheckbox && configSection) {
-    // 默认启用智能路由（FastGPT已预配置）
+    // 默认启用智能路由
     enabledCheckbox.checked = FASTGPT_CONFIG.enabled;
     toggleFastGPTSection(FASTGPT_CONFIG.enabled);
 
-    // 绑定开关事件（允许用户禁用）
+    // 绑定开关事件
     enabledCheckbox.addEventListener('change', () => {
       FASTGPT_CONFIG.enabled = enabledCheckbox.checked;
       toggleFastGPTSection(enabledCheckbox.checked);
-      // 保存用户的选择
       localStorage.setItem('fastgptEnabled', enabledCheckbox.checked);
     });
 
@@ -3944,6 +3980,112 @@ function initFastGPTConfigUI() {
       toggleFastGPTSection(enabledCheckbox.checked);
     }
   }
+
+  // 初始化工作流列表
+  loadCustomWorkflows();
+  renderWorkflowList();
+  bindWorkflowForm();
+}
+
+function renderWorkflowList() {
+  const listEl = document.getElementById('workflowList');
+  if (!listEl) return;
+
+  const all = getAllWorkflows();
+  if (all.length === 0) {
+    listEl.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0;">暂无工作流</div>';
+    return;
+  }
+
+  listEl.innerHTML = all.map(wf => `
+    <div class="workflow-item ${wf.isDefault ? 'is-default' : ''}" data-id="${wf.id}">
+      <div class="workflow-item-info">
+        <span class="workflow-item-icon">${wf.builtIn ? '🏢' : '📋'}</span>
+        <span class="workflow-item-name">${escapeHtml(wf.name)}</span>
+        ${wf.isDefault ? '<span class="workflow-default-badge">默认</span>' : ''}
+      </div>
+      <div class="workflow-item-actions">
+        ${!wf.isDefault ? `<button class="workflow-action-btn" onclick="setDefaultWorkflow('${wf.id}')">设为默认</button>` : ''}
+        ${!wf.builtIn ? `<button class="workflow-action-btn delete" onclick="removeWorkflow('${wf.id}')">删除</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function bindWorkflowForm() {
+  const addBtn = document.getElementById('addWorkflowBtn');
+  if (!addBtn) return;
+
+  addBtn.addEventListener('click', () => {
+    const name = document.getElementById('wfName').value.trim();
+    const appId = document.getElementById('wfAppId').value.trim();
+    const apiKey = document.getElementById('wfApiKey').value.trim();
+
+    if (!name) { alert('请输入工作流名称'); return; }
+    if (!appId) { alert('请输入应用ID'); return; }
+    if (!apiKey) { alert('请输入API Key'); return; }
+
+    // 检查重复
+    const all = getAllWorkflows();
+    if (all.some(w => w.appId === appId)) {
+      alert('该应用ID已存在');
+      return;
+    }
+
+    customWorkflows.push({
+      id: 'wf_' + Date.now(),
+      name,
+      appId,
+      apiKey,
+      isDefault: false,
+      builtIn: false
+    });
+    saveCustomWorkflows();
+    renderWorkflowList();
+
+    // 清空表单
+    document.getElementById('wfName').value = '';
+    document.getElementById('wfAppId').value = '';
+    document.getElementById('wfApiKey').value = '';
+  });
+}
+
+function setDefaultWorkflow(id) {
+  // 先清除所有默认标记
+  BUILTIN_WORKFLOWS.forEach(w => w.isDefault = false);
+  customWorkflows.forEach(w => w.isDefault = false);
+
+  const all = getAllWorkflows();
+  const target = all.find(w => w.id === id);
+  if (target) {
+    target.isDefault = true;
+    // 如果是自定义工作流，需要保存
+    if (!target.builtIn) {
+      saveCustomWorkflows();
+    } else {
+      // 内置工作流设为默认时，也要清除自定义工作流的默认标记
+      saveCustomWorkflows();
+    }
+  }
+  renderWorkflowList();
+}
+
+function removeWorkflow(id) {
+  customWorkflows = customWorkflows.filter(w => w.id !== id);
+  saveCustomWorkflows();
+
+  // 如果删除的是默认工作流，把默认还给协同办公
+  const all = getAllWorkflows();
+  if (!all.some(w => w.isDefault)) {
+    BUILTIN_WORKFLOWS[0].isDefault = true;
+  }
+  renderWorkflowList();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function toggleFastGPTSection(show) {
@@ -5592,9 +5734,29 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.4.1</span>
+          <span class="changelog-version-number">v1.5.0</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🆕 新功能</h5>
+          <ul>
+            <li><strong>leaprag 工作流管理</strong> - 全新设计的 leaprag 设置页，支持跳转内部平台、预配置协同办公工作流、用户自定义添加工作流</li>
+            <li><strong>多工作流支持</strong> - 用户可在 leaprag 平台创建工作流后，填入应用ID和API Key即可使用，支持设为默认、删除</li>
+            <li><strong>品牌升级</strong> - 全面去除 FastGPT 字样，统一为 leaprag 品牌</li>
+          </ul>
+          <h5 style="margin:8px 0 4px;color:var(--text-primary)">🐛 Bug 修复</h5>
+          <ul>
+            <li>修复 Service Worker 中 screen 未定义导致热更新窗口无法打开的问题</li>
+            <li>修复 zip 包结构，解压后自动生成 extension 目录</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.4.1</span>
+          <span class="changelog-version-date">2026-08-21</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🐛 Bug 修复</h5>
@@ -5671,7 +5833,7 @@ function showChangelogModal() {
           <ul>
             <li><strong>思考过程流式输出</strong> - 参考 WorkBuddy 等平台，AI思考过程实时流式显示，不再等待思考完成才输出</li>
             <li><strong>回复内容流式输出</strong> - AI回复内容逐字实时渲染，打字机效果体验</li>
-            <li><strong>双模型流式支持</strong> - 主AI模型（Agnes）和 FastGPT 知识库均支持流式输出</li>
+            <li><strong>双模型流式支持</strong> - 主AI模型（Agnes）和 leaprag-工作流均支持流式输出</li>
           </ul>
         </div>
       </div>
@@ -5728,7 +5890,7 @@ function showChangelogModal() {
             <li>初始版本发布</li>
             <li>基础AI对话功能</li>
             <li>页面内容分析</li>
-            <li>FastGPT知识库集成</li>
+            <li>leaprag-工作流集成</li>
             <li>液态玻璃UI设计</li>
           </ul>
         </div>

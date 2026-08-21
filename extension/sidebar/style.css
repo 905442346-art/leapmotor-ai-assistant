@@ -1075,6 +1075,208 @@ body {
   color: #5A9A1B;
 }
 
+/* ========== leaprag 工作流管理样式 ========== */
+.leaprag-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.06), rgba(143, 224, 64, 0.04));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
+.leaprag-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.leaprag-logo {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.leaprag-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.leaprag-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.btn-leaprag-open {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: var(--accent-glass);
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  color: var(--accent-color);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-leaprag-open:hover {
+  background: var(--accent-glass-hover);
+  transform: translateY(-1px);
+}
+
+/* 工作流列表 */
+.workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflow-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.workflow-item:hover {
+  border-color: var(--accent-border);
+}
+
+.workflow-item.is-default {
+  border-color: rgba(143, 224, 64, 0.3);
+  background: linear-gradient(135deg, rgba(143, 224, 64, 0.06), var(--glass-bg));
+}
+
+.workflow-item-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-item-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.workflow-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-default-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  background: rgba(143, 224, 64, 0.2);
+  color: #5A9A1B;
+  border-radius: 10px;
+}
+
+.workflow-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.workflow-action-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.workflow-action-btn:hover {
+  background: var(--accent-glass);
+  border-color: var(--accent-border);
+  color: var(--accent-color);
+}
+
+.workflow-action-btn.delete:hover {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: #ff5050;
+}
+
+.workflow-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 添加工作流表单 */
+.workflow-add-section {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+
+.workflow-add-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.workflow-form-row {
+  margin-bottom: 8px;
+}
+
+.workflow-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+}
+
+.workflow-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.workflow-input:focus {
+  border-color: var(--accent-border);
+}
+
+.workflow-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
 .status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
