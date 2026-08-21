@@ -4244,6 +4244,47 @@ window.addEventListener('message', (event) => {
   }
 });
 
+// ========== 输入框 Placeholder 轮换 ==========
+const PLACEHOLDER_HINTS = [
+  '输入你的问题...',
+  '试试问我「走哪个流程」',
+  '帮我分析这个页面',
+  '试试问我「电脑坏了找谁」',
+  '输入问题，按 Enter 发送',
+  '试试问我「怎么报销」',
+  '支持快捷键 Ctrl+M 唤起哦',
+];
+
+let placeholderTimer = null;
+
+function startPlaceholderRotation(input) {
+  if (!input) return;
+  let idx = 0;
+  // 用户开始输入时停止轮换
+  input.addEventListener('focus', () => {
+    if (placeholderTimer) { clearInterval(placeholderTimer); placeholderTimer = null; }
+    if (!input.value) input.placeholder = PLACEHOLDER_HINTS[0];
+  });
+  // 失焦且无内容时恢复轮换
+  input.addEventListener('blur', () => {
+    if (!input.value) startTimer();
+  });
+  function startTimer() {
+    if (placeholderTimer) clearInterval(placeholderTimer);
+    placeholderTimer = setInterval(() => {
+      if (document.activeElement === input || input.value) return;
+      idx = (idx + 1) % PLACEHOLDER_HINTS.length;
+      input.style.transition = 'opacity 0.2s';
+      input.style.opacity = '0.5';
+      setTimeout(() => {
+        input.placeholder = PLACEHOLDER_HINTS[idx];
+        input.style.opacity = '1';
+      }, 200);
+    }, 3500);
+  }
+  startTimer();
+}
+
 // ========== 初始化 ==========
 function init() {
   // 加载自定义快捷键
@@ -4296,6 +4337,9 @@ function init() {
       sendMessage();
     }
   });
+
+  // 启动 placeholder 轮换提示
+  startPlaceholderRotation(input);
 
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
   document.getElementById('newChatBtn').addEventListener('click', newChat);
@@ -5827,15 +5871,29 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.7</span>
+          <span class="changelog-version-number">v1.5.8</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
           <ul>
-            <li><strong>Header 版本号小标签</strong> - 侧边栏顶部右侧新增版本号徽章，一眼可见当前版本</li>
-            <li><strong>更新 Toast 提示</strong> - 热更新后打开插件自动显示"🎉 已更新到 vX.X.X"浮动提示，3秒后消失</li>
+            <li><strong>输入框提示语轮换</strong> - 输入框 placeholder 每 3.5 秒自动切换不同提示语，引导用户发现各种功能（如「试试问我走哪个流程」「支持快捷键 Ctrl+M」等）</li>
+            <li><strong>淡入动画</strong> - 切换时有淡出再淡入的过渡效果</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.7</span>
+          <span class="changelog-version-date">2026-08-21</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
+          <ul>
+            <li><strong>Header 版本号小标签</strong> - 侧边栏顶部右侧新增版本号徽章</li>
+            <li><strong>更新 Toast 提示</strong> - 热更新后自动显示"🎉 已更新到 vX.X.X"浮动提示</li>
           </ul>
         </div>
       </div>
