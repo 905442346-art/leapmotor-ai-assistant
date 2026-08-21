@@ -228,6 +228,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 打开热更新独立窗口（sidebar在iframe中无法调用showDirectoryPicker）
+  if (request.type === 'OPEN_HOT_UPDATE_WINDOW') {
+    const version = request.version || '';
+    const url = chrome.runtime.getURL(`sidebar/hot-update.html?v=${Date.now()}&version=${encodeURIComponent(version)}`);
+    chrome.windows.create({
+      url: url,
+      type: 'popup',
+      width: 460,
+      height: 420,
+      focused: true,
+      left: Math.round((screen.availWidth - 460) / 2),
+      top: Math.round((screen.availHeight - 420) / 2),
+    }, (win) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ success: true, windowId: win.id });
+      }
+    });
+    return true;
+  }
+
   if (request.type === 'CAPTURE_TAB') {
     try {
       chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {

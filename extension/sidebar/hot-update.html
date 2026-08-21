@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>零跑AI助手 - 热更新</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 420px;
+      min-height: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #1a1d23 0%, #252932 100%);
+      color: #e8e8e8;
+      padding: 28px 24px 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .logo {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #8FE040, #5bc216);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .title {
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+    }
+    .content {
+      font-size: 13px;
+      line-height: 1.7;
+      color: #c0c0c0;
+    }
+    .step {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(143,224,64,0.15);
+      color: #8FE040;
+      font-weight: 700;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step-num.active {
+      background: linear-gradient(135deg, #8FE040, #5bc216);
+      color: #000;
+      animation: pulse 1s ease-in-out infinite;
+    }
+    .step-num.done {
+      background: #8FE040;
+      color: #000;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    .step-text strong { color: #e8e8e8; }
+    .step-text .detail { font-size: 11px; color: #888; margin-top: 2px; word-break: break-all; }
+    .btn {
+      width: 100%;
+      padding: 11px 16px;
+      margin-top: 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #8FE040, #5bc216);
+      color: #000;
+    }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-primary:disabled {
+      background: #444; color: #888; cursor: not-allowed; transform: none; filter: none;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      color: #ccc;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .error {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: rgba(255,82,82,0.1);
+      border: 1px solid rgba(255,82,82,0.25);
+      border-radius: 8px;
+      color: #ff8080;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .success-box {
+      text-align: center;
+      padding: 20px 0;
+    }
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .success-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #8FE040;
+      margin-bottom: 6px;
+    }
+    .progress-bar-wrap {
+      margin-top: 14px;
+      height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #8FE040, #5bc216);
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+    .file-info {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #888;
+      font-family: 'SF Mono', Monaco, monospace;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡</div>
+    <div>
+      <div class="title">零跑AI助手 热更新</div>
+      <div class="subtitle" id="subtitle">正在准备更新...</div>
+    </div>
+  </div>
+
+  <div class="content" id="stepContainer">
+    <div class="step" id="step1">
+      <div class="step-num" id="num1">1</div>
+      <div class="step-text">
+        <strong>选择 extension 目录</strong>
+        <div class="detail">点击下方按钮，在弹窗中选择你加载扩展的 extension 文件夹（首次使用需要授权）</div>
+      </div>
+    </div>
+    <div class="step" id="step2" style="opacity:0.4">
+      <div class="step-num" id="num2">2</div>
+      <div class="step-text">
+        <strong>下载并覆盖文件</strong>
+        <div class="detail" id="step2Detail">等待中...</div>
+      </div>
+    </div>
+    <div class="step" id="step3" style="opacity:0.4">
+      <div class="step-num" id="num3">3</div>
+      <div class="step-text">
+        <strong>自动重载扩展</strong>
+        <div class="detail">更新完成后将自动重启扩展</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="actionArea"></div>
+</body>
+<script src="hot-update.js"></script>
+</html>
