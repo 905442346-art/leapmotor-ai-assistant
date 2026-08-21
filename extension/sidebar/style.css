@@ -4,54 +4,8 @@
   box-sizing: border-box;
 }
 
-/* ========== 深色主题（默认） ========== */
-:root, [data-theme="dark"] {
-  --lp-green: #5A9A1B;
-  --lp-green-bright: #8FE040;
-  --lp-green-light: #B8F562;
-  --lp-cyan: #00D4FF;
-  --lp-blue: #0066FF;
-
-  --bg-base: #050714;
-  --glass-opacity: 0.08;
-  --glass-blur: 24px;
-  --glass-saturation: 180%;
-  --glass-border-opacity: 0.15;
-
-  --text-primary: #FFFFFF;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-tertiary: rgba(255, 255, 255, 0.45);
-
-  --accent: #8FE040;
-  --accent-glow: rgba(143, 224, 64, 0.6);
-  --accent-deep: #5A9A1B;
-  --accent-text: #050714;
-  --success: #00E676;
-  --error: #FF5252;
-
-  --shadow-glow: 0 0 24px rgba(143, 224, 64, 0.35);
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-inset: inset 0 1px 2px rgba(255, 255, 255, 0.08);
-  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.15);
-
-  --glass-bg: rgba(255, 255, 255, 0.06);
-  --glass-bg-hover: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-border-bright: rgba(255, 255, 255, 0.2);
-  --input-bg: rgba(0, 0, 0, 0.2);
-  --input-focus-bg: rgba(0, 0, 0, 0.25);
-  --code-bg: rgba(0, 0, 0, 0.3);
-  --bubble-ai-bg: rgba(255, 255, 255, 0.04);
-  --bubble-user-bg: rgba(0, 212, 255, 0.12);
-
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
-}
-
-/* ========== 浅色主题 ========== */
-[data-theme="light"] {
+/* ========== 浅色主题（默认） ========== */
+:root, [data-theme="light"] {
   --lp-green: #4A7F18;
   --lp-green-bright: #5A9A1B;
   --lp-green-light: #8FE040;
@@ -89,6 +43,52 @@
   --code-bg: rgba(0, 0, 0, 0.05);
   --bubble-ai-bg: rgba(255, 255, 255, 0.6);
   --bubble-user-bg: rgba(0, 153, 204, 0.1);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+}
+
+/* ========== 深色主题 ========== */
+[data-theme="dark"] {
+  --lp-green: #5A9A1B;
+  --lp-green-bright: #8FE040;
+  --lp-green-light: #B8F562;
+  --lp-cyan: #00D4FF;
+  --lp-blue: #0066FF;
+
+  --bg-base: #050714;
+  --glass-opacity: 0.08;
+  --glass-blur: 24px;
+  --glass-saturation: 180%;
+  --glass-border-opacity: 0.15;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-tertiary: rgba(255, 255, 255, 0.45);
+
+  --accent: #8FE040;
+  --accent-glow: rgba(143, 224, 64, 0.6);
+  --accent-deep: #5A9A1B;
+  --accent-text: #050714;
+  --success: #00E676;
+  --error: #FF5252;
+
+  --shadow-glow: 0 0 24px rgba(143, 224, 64, 0.35);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-inset: inset 0 1px 2px rgba(255, 255, 255, 0.08);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-hover: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-bright: rgba(255, 255, 255, 0.2);
+  --input-bg: rgba(0, 0, 0, 0.2);
+  --input-focus-bg: rgba(0, 0, 0, 0.25);
+  --code-bg: rgba(0, 0, 0, 0.3);
+  --bubble-ai-bg: rgba(255, 255, 255, 0.04);
+  --bubble-user-bg: rgba(0, 212, 255, 0.12);
 }
 
 html, body {

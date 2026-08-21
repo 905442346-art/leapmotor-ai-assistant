@@ -211,8 +211,15 @@ if (window.__localAIAssistantInjected) {
     sidebarIframe.style.cssText = `
       position: fixed; top: 0; right: 0; width: 400px; height: 100vh;
       border: none; z-index: 2147483647; box-shadow: -8px 0 32px rgba(10,26,47,0.18);
-      transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: #050714;
+      transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+      background: #F0F2F8; opacity: 0;
     `;
+    // iframe加载完成后淡入，避免加载过程中的黑屏/白屏闪烁
+    sidebarIframe.addEventListener('load', () => {
+      requestAnimationFrame(() => {
+        if (sidebarIframe) sidebarIframe.style.opacity = '1';
+      });
+    });
     document.body.appendChild(sidebarIframe);
     window.addEventListener('message', handleSidebarMessage);
   }
@@ -651,9 +658,15 @@ function handleFloatingButtonClick(e) {
         border: none; z-index: 2147483647;
         box-shadow: -8px 0 32px rgba(10,26,47,0.18);
         transform: translateX(100%);
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        background: #050714;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+        background: #F0F2F8; opacity: 0;
       `;
+      // iframe加载完成后淡入，避免黑屏闪烁
+      sidebar.addEventListener('load', () => {
+        requestAnimationFrame(() => {
+          if (sidebar) sidebar.style.opacity = '1';
+        });
+      });
       document.body.appendChild(sidebar);
 
       // 延迟打开（等待iframe加载）
