@@ -226,9 +226,23 @@ body {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
   position: relative;
   z-index: 1;
+}
+
+.header-version-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-glow);
+  padding: 2px 8px;
+  border-radius: 8px;
+  margin-right: 6px;
+  letter-spacing: 0.02em;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .icon-btn {
@@ -3952,4 +3966,43 @@ body {
 
 [data-theme="light"] .oa-card:hover {
   background: rgba(255, 255, 255, 0.85);
+}
+
+/* ========== 版本更新 Toast 提示 ========== */
+.update-toast {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid var(--accent);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), var(--shadow-glow);
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.update-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.update-toast .toast-icon {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 14px;
+}
+
+.update-toast .toast-version {
+  color: var(--accent);
+  font-weight: 700;
 }

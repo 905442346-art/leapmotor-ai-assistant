@@ -5036,11 +5036,24 @@ function initAutoUpdateSystem() {
   currentVersion = getCurrentVersion();
   console.log('[在线更新] 📌 当前版本:', currentVersion);
 
-  // 显示当前版本号
+  // 显示当前版本号（设置页）
   const versionDisplay = document.getElementById('currentVersionDisplay');
   if (versionDisplay) {
     versionDisplay.textContent = `v${currentVersion}`;
   }
+
+  // 更新 header 版本号小标签
+  const headerBadge = document.getElementById('headerVersionBadge');
+  if (headerBadge) {
+    headerBadge.textContent = `v${currentVersion}`;
+  }
+
+  // 检测版本变化，显示"已更新到 vX.X.X"提示
+  const lastVersion = localStorage.getItem('lastActiveVersion');
+  if (lastVersion && lastVersion !== currentVersion) {
+    showUpdateToast(currentVersion);
+  }
+  localStorage.setItem('lastActiveVersion', currentVersion);
 
   // 初始化热更新模块
   HOT_UPDATE.init().then(() => {
@@ -5080,6 +5093,31 @@ function getCurrentVersion() {
     console.warn('[在线更新] 无法获取manifest版本:', e);
     return '1.0.0';
   }
+}
+
+/**
+ * 显示"已更新到 vX.X.X"的 Toast 提示
+ */
+function showUpdateToast(version) {
+  // 移除已有的 toast
+  const existing = document.querySelector('.update-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'update-toast';
+  toast.innerHTML = `<span class="toast-icon">🎉</span>已更新到 <span class="toast-version">v${version}</span>`;
+  document.body.appendChild(toast);
+
+  // 触发动画
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add('show'));
+  });
+
+  // 3秒后自动消失
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
 /**
@@ -5789,14 +5827,28 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.6</span>
+          <span class="changelog-version-number">v1.5.7</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
+          <ul>
+            <li><strong>Header 版本号小标签</strong> - 侧边栏顶部右侧新增版本号徽章，一眼可见当前版本</li>
+            <li><strong>更新 Toast 提示</strong> - 热更新后打开插件自动显示"🎉 已更新到 vX.X.X"浮动提示，3秒后消失</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.6</span>
+          <span class="changelog-version-date">2026-08-21</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🔥 紧急修复</h5>
           <ul>
-            <li><strong>修复热更新文件写入损坏</strong> - 修复热更新后CSS/JS文件被写坏导致Chrome报"不是UTF-8编码"的严重bug。根因是stored（无压缩）文件提取时ArrayBuffer.slice(0)错误复制了整个ZIP的二进制垃圾数据而非文件内容，现已改为正确的offset+length切片</li>
+            <li><strong>修复热更新文件写入损坏</strong> - 修复热更新后CSS/JS文件被写坏导致Chrome报"不是UTF-8编码"的严重bug</li>
           </ul>
         </div>
       </div>
