@@ -5789,16 +5789,31 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.3</span>
+          <span class="changelog-version-number">v1.5.4</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🐛 Bug 修复</h5>
+          <ul>
+            <li><strong>修复热更新窗口卡住问题</strong> - 解决热更新弹窗停留在步骤2"等待中"无响应的问题。原因是自动打开的窗口缺少用户手势，DirectoryHandle.requestPermission() 无法弹出授权对话框导致 Promise 永久挂起</li>
+            <li><strong>增加"开始更新"按钮</strong> - 已授权用户打开更新窗口后，需点击「开始更新」按钮才执行下载，确保权限检查在用户手势上下文中执行</li>
+            <li><strong>权限检查超时保护</strong> - queryPermission/requestPermission 添加 5s/10s 超时，避免永久挂起</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.3</span>
+          <span class="changelog-version-date">2026-08-21</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⌨️ 快捷键优化</h5>
           <ul>
             <li><strong>Windows 默认快捷键改为 Ctrl+M</strong> - 打开/关闭助手改为 Ctrl+M，分析页面改为 Ctrl+Shift+M，避免与浏览器常用快捷键冲突</li>
             <li><strong>快捷键提示动态更新</strong> - 修改快捷键后，左下角提示文字实时同步变化，不再硬编码显示 J 键</li>
-            <li><strong>平台自适应默认快捷键</strong> - Mac 保持 ⌘J/⌘⇧J，Windows 用 Ctrl+M/Ctrl+Shift+M，快捷键录制自动适配平台修饰键</li>
+            <li><strong>平台自适应默认快捷键</strong> - Mac 保持 ⌘J/⌘⇧J，Windows 用 Ctrl+M/Ctrl+Shift+M</li>
           </ul>
         </div>
       </div>

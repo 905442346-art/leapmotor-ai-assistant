@@ -85,7 +85,8 @@ async function init() {
     const existingHandle = await loadHandle();
     if (existingHandle) {
       setActiveStep(1, 'done');
-      startUpdate(existingHandle);
+      // 不自动开始更新——requestPermission 需要用户手势，显示"开始更新"按钮让用户点击
+      showStartUpdateButton(existingHandle);
     } else {
       showSelectDirButton();
     }
@@ -116,6 +117,23 @@ function setActiveStep(num, state) {
       stepEl.style.opacity = '1';
     }
   }
+}
+
+function showStartUpdateButton(dirHandle) {
+  setActiveStep(1, 'done');
+  document.getElementById('step2Detail').textContent = '点击下方按钮开始下载更新';
+  const area = document.getElementById('actionArea');
+  area.innerHTML = `
+    <button id="startUpdateBtn" class="btn btn-primary">🚀 开始更新到 v${targetVersion}</button>
+    <button id="cancelBtn" class="btn btn-secondary" style="margin-top:8px;">取消</button>
+    <div style="margin-top:10px;padding:10px;background:rgba(143,224,64,0.06);border:1px solid rgba(143,224,64,0.15);border-radius:8px;font-size:11px;color:#b8e880;line-height:1.6;">
+      ✅ 已找到授权目录，点击「开始更新」将自动下载、覆盖文件并重载扩展。
+    </div>
+  `;
+  document.getElementById('startUpdateBtn').addEventListener('click', () => {
+    startUpdate(dirHandle);
+  });
+  document.getElementById('cancelBtn').addEventListener('click', () => window.close());
 }
 
 function showSelectDirButton() {
@@ -174,24 +192,39 @@ async function selectAndUpdate() {
  * 下载 GitHub Release ZIP，解压并覆盖 extension 目录
  */
 async function startUpdate(dirHandle) {
-  // 检查写入权限
-  const perm = await dirHandle.queryPermission({ mode: 'readwrite' });
-  if (perm !== 'granted') {
-    const req = await dirHandle.requestPermission({ mode: 'readwrite' });
-    if (req !== 'granted') {
-      showError('未获得目录写入权限，无法更新');
-      return;
-    }
-  }
-
+  // 先显示步骤2的UI，让用户看到进度
   setActiveStep(2, 'active');
   const area = document.getElementById('actionArea');
   area.innerHTML = `
     <div class="progress-bar-wrap"><div class="progress-bar" id="pbar" style="width:0%"></div></div>
-    <div class="file-info" id="fileInfo">正在下载更新包...</div>
+    <div class="file-info" id="fileInfo">正在验证目录权限...</div>
   `;
   const pbar = document.getElementById('pbar');
   const fileInfo = document.getElementById('fileInfo');
+
+  // 检查写入权限（带超时，防止无用户手势时 requestPermission 永久挂起）
+  try {
+    const perm = await Promise.race([
+      dirHandle.queryPermission({ mode: 'readwrite' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('权限检查超时')), 5000))
+    ]);
+    if (perm !== 'granted') {
+      fileInfo.textContent = '正在请求目录写入权限...';
+      const req = await Promise.race([
+        dirHandle.requestPermission({ mode: 'readwrite' }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('权限请求超时，请点击按钮重试')), 10000))
+      ]);
+      if (req !== 'granted') {
+        showError('未获得目录写入权限，无法更新。请关闭窗口后重新点击「检查更新」。');
+        return;
+      }
+    }
+  } catch (permErr) {
+    showError(`权限验证失败: ${permErr.message}\n\n请关闭窗口后重新点击「检查更新」，并确保在弹窗中点击「开始更新」按钮。`);
+    return;
+  }
+
+  fileInfo.textContent = '正在下载更新包...';
 
   try {
     // 1. 下载 ZIP
