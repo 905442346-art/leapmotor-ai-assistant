@@ -7,11 +7,12 @@ if (window.__localAIAssistantInjected) {
   let isDOMReady = document.readyState === 'complete' || document.readyState === 'interactive';
 
   // ========== 自定义快捷键管理 ==========
-  // 默认快捷键配置
-  let customShortcuts = {
-    'toggle-assistant': { key: 'j', ctrl: true, shift: false, alt: false, meta: true },
-    'analyze-page': { key: 'j', ctrl: true, shift: true, alt: false, meta: true }
-  };
+  // 平台自适应默认快捷键：Mac 用 Cmd+J/⌘⇧J，Windows/Linux 用 Ctrl+M/Ctrl+Shift+M
+  const _isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 || navigator.userAgent.includes('Macintosh');
+  const DEFAULT_SHORTCUTS = _isMac
+    ? { 'toggle-assistant': { key: 'j', ctrl: false, shift: false, alt: false, meta: true }, 'analyze-page': { key: 'j', ctrl: false, shift: true, alt: false, meta: true } }
+    : { 'toggle-assistant': { key: 'm', ctrl: true, shift: false, alt: false, meta: false }, 'analyze-page': { key: 'm', ctrl: true, shift: true, alt: false, meta: false } };
+  let customShortcuts = { ...DEFAULT_SHORTCUTS };
 
   /**
    * 更新快捷键配置（从sidebar接收）

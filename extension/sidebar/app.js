@@ -69,10 +69,12 @@ const MOD_KEY = isMac ? '⌘' : 'Ctrl';
 const SHIFT_MOD = isMac ? '⇧' : 'Shift';
 
 // ========== 快捷键管理 ==========
-let customShortcuts = {
-  'toggle-assistant': { key: 'j', ctrl: true, shift: false, alt: false, meta: true },  // 默认 Cmd/Ctrl+J
-  'analyze-page': { key: 'j', ctrl: true, shift: true, alt: false, meta: true }       // 默认 Cmd/Ctrl+Shift+J
-};
+// 平台自适应默认快捷键：Mac 用 Cmd+J/⌘⇧J，Windows/Linux 用 Ctrl+M/Ctrl+Shift+M
+const DEFAULT_SHORTCUTS = isMac
+  ? { 'toggle-assistant': { key: 'j', ctrl: false, shift: false, alt: false, meta: true }, 'analyze-page': { key: 'j', ctrl: false, shift: true, alt: false, meta: true } }
+  : { 'toggle-assistant': { key: 'm', ctrl: true, shift: false, alt: false, meta: false }, 'analyze-page': { key: 'm', ctrl: true, shift: true, alt: false, meta: false } };
+
+let customShortcuts = { ...DEFAULT_SHORTCUTS };
 
 let currentRecordingAction = null; // 当前正在录制快捷键的动作
 
@@ -83,10 +85,25 @@ function loadCustomShortcuts() {
   const saved = localStorage.getItem('customShortcuts');
   if (saved) {
     try {
-      customShortcuts = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // 迁移旧配置：旧版 ctrl+meta 同时为 true 的，按平台修正为只使用对应修饰键
+      for (const action of Object.keys(parsed)) {
+        const sc = parsed[action];
+        if (sc && sc.ctrl && sc.meta) {
+          if (isMac) {
+            sc.ctrl = false; // Mac 只用 Cmd
+          } else {
+            sc.meta = false; // Windows 只用 Ctrl
+          }
+        }
+      }
+      customShortcuts = { ...DEFAULT_SHORTCUTS, ...parsed };
     } catch(e) {
       console.error('[快捷键] 加载失败:', e);
+      customShortcuts = { ...DEFAULT_SHORTCUTS };
     }
+  } else {
+    customShortcuts = { ...DEFAULT_SHORTCUTS };
   }
 }
 
@@ -3475,7 +3492,9 @@ function bindChips() {
 function renderShortcutHints() {
   const el = document.getElementById('shortcutHint');
   if (el) {
-    el.innerHTML = `<kbd>${MOD_KEY}</kbd><kbd>J</kbd> 唤起 · <kbd>${MOD_KEY}</kbd><kbd>V</kbd> 粘贴`;
+    const toggle = customShortcuts['toggle-assistant'];
+    const toggleKey = toggle ? toggle.key.toUpperCase() : '?';
+    el.innerHTML = `<kbd>${MOD_KEY}</kbd><kbd>${toggleKey}</kbd> 唤起 · <kbd>${MOD_KEY}</kbd><kbd>V</kbd> 粘贴`;
   }
 }
 
@@ -5770,9 +5789,24 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.5.2</span>
+          <span class="changelog-version-number">v1.5.3</span>
           <span class="changelog-version-date">2026-08-21</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⌨️ 快捷键优化</h5>
+          <ul>
+            <li><strong>Windows 默认快捷键改为 Ctrl+M</strong> - 打开/关闭助手改为 Ctrl+M，分析页面改为 Ctrl+Shift+M，避免与浏览器常用快捷键冲突</li>
+            <li><strong>快捷键提示动态更新</strong> - 修改快捷键后，左下角提示文字实时同步变化，不再硬编码显示 J 键</li>
+            <li><strong>平台自适应默认快捷键</strong> - Mac 保持 ⌘J/⌘⇧J，Windows 用 Ctrl+M/Ctrl+Shift+M，快捷键录制自动适配平台修饰键</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.2</span>
+          <span class="changelog-version-date">2026-08-21</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🚀 热更新全面升级</h5>
