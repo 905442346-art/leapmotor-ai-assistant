@@ -1422,6 +1422,10 @@ function addMessage(role, content, isHTML = false) {
   }
 
   msgContent.appendChild(bubble);
+  // AI 文本回答挂载悬停复制按钮（HTML 卡片如 OA 流程不挂载，避免与"立即发起"按钮冲突）
+  if (role === 'ai' && !isHTML && content) {
+    attachCopyButton(bubble, content);
+  }
   msg.appendChild(avatar);
   msg.appendChild(msgContent);
   container.appendChild(msg);
@@ -2915,6 +2919,38 @@ function createAnswerArea() {
   return bubble;
 }
 
+/**
+ * 给 AI 回答 bubble 挂载悬停复制按钮
+ * @param {HTMLElement} bubble - message-bubble 元素
+ * @param {string} text - 待复制的原始文本（markdown 原文）
+ */
+function attachCopyButton(bubble, text) {
+  if (!bubble || !text) return;
+  // 避免重复挂载
+  if (bubble.querySelector('.copy-btn')) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.type = 'button';
+  btn.title = '复制回答';
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.classList.add('copied');
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+      }, 1500);
+    } catch (err) {
+      console.warn('[attachCopyButton] 复制失败:', err);
+    }
+  });
+  bubble.appendChild(btn);
+}
+
 // 流式打字机效果输出
 function typeWriterEffect(element, htmlContent, isHtml, onComplete) {
   // HTML内容不做逐字打字（会破坏标签），做淡入显示
@@ -3217,6 +3253,8 @@ async function sendMessage() {
         bubble.innerHTML = renderMarkdown(aiText);
         bubble.style.transition = 'opacity 0.3s ease';
         requestAnimationFrame(() => { bubble.style.opacity = '1'; });
+        // 挂载悬停复制按钮（复制 markdown 原文）
+        attachCopyButton(bubble, aiText);
       }
 
       // 如果使用了FastGPT知识库或OA流程，显示来源标签（追加到bubble后面，作为msgContent子元素）
@@ -5871,9 +5909,23 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.5.9</span>
+          <span class="changelog-version-date">2026-08-22</span>
+          <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
+          <ul>
+            <li><strong>AI 回答一键复制</strong> - 鼠标悬停在 AI 回答气泡上时，右上角显示复制按钮，点击即可复制 Markdown 原文到剪贴板，复制后显示绿色对勾反馈</li>
+            <li><strong>液态玻璃风格</strong> - 复制按钮采用与整体一致的玻璃质感与悬停高亮，深浅色主题自适应</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
           <span class="changelog-version-number">v1.5.8</span>
           <span class="changelog-version-date">2026-08-21</span>
-          <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>

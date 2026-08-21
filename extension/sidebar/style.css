@@ -1716,6 +1716,41 @@ body {
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   border-top-left-radius: 4px;
+  position: relative;
+}
+
+/* AI 回答复制按钮（悬停显示） */
+.message.ai .message-bubble .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-hover);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
+  z-index: 2;
+}
+
+.message.ai .message-bubble:hover .copy-btn { opacity: 1; }
+.message.ai .message-bubble .copy-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.message.ai .message-bubble .copy-btn.copied {
+  color: var(--success);
+  border-color: var(--success);
+  opacity: 1;
 }
 
 .message-bubble pre {
