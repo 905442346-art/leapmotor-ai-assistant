@@ -5263,7 +5263,7 @@ function hideHeaderUpdateIcon() {
 }
 
 /**
- * 显示热更新成功横幅（提示用户刷新扩展）
+ * 显示热更新成功横幅（提示用户打开扩展管理页刷新）
  * @param {string} version - 新版本号
  */
 function showUpdateSuccessBanner(version) {
@@ -5279,21 +5279,28 @@ function showUpdateSuccessBanner(version) {
     <div class="banner-icon">🎉</div>
     <div class="banner-text">
       <div class="banner-title">已成功更新到 ${v}！</div>
-      <div class="banner-desc">扩展管理页已打开，请点击 ↻ 刷新按钮完成更新</div>
+      <div class="banner-desc">请点击右侧按钮打开扩展管理页，然后点击零跑AI助手卡片上的 ↻ 刷新</div>
     </div>
-    <button class="banner-refresh-btn" title="自动刷新扩展（等同于点击扩展管理页的 ↻ 按钮）">↻ 一键刷新扩展</button>
+    <button class="banner-refresh-btn" title="打开 chrome://extensions 扩展管理页">🔗 打开扩展管理页</button>
     <button class="banner-close" title="关闭">×</button>
   `;
   document.body.appendChild(banner);
 
-  // 一键刷新扩展（chrome.runtime.reload 与扩展管理页的 ↻ 按钮等效）
-  banner.querySelector('.banner-refresh-btn').addEventListener('click', () => {
+  // 打开 chrome://extensions/（优先聚焦已打开的标签页）
+  banner.querySelector('.banner-refresh-btn').addEventListener('click', async () => {
     try {
-      chrome.runtime.reload();
+      const tabs = await chrome.tabs.query({ url: 'chrome://extensions/*' });
+      if (tabs && tabs.length > 0) {
+        const tab = tabs[0];
+        await chrome.tabs.update(tab.id, { active: true });
+        if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+      } else {
+        await chrome.tabs.create({ url: 'chrome://extensions/', active: true });
+      }
     } catch (e) {
-      console.warn('[更新横幅] 自动刷新失败:', e);
+      console.warn('[更新横幅] 打开扩展管理页失败:', e);
       const desc = banner.querySelector('.banner-desc');
-      if (desc) desc.textContent = '自动刷新失败，请到 chrome://extensions 手动点击 ↻ 刷新';
+      if (desc) desc.innerHTML = '打开失败，请手动在地址栏输入 <code>chrome://extensions</code> 并点击 ↻ 刷新';
     }
   });
 
@@ -6021,9 +6028,25 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.6.2</span>
+          <span class="changelog-version-number">v1.6.3</span>
           <span class="changelog-version-date">2026-08-23</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🔧 更新流程优化</h5>
+          <ul>
+            <li><strong>取消自动打开扩展页</strong> - 更新完成后不再强制跳转 chrome://extensions/，避免打断用户当前浏览</li>
+            <li><strong>更新窗口不自动关闭</strong> - 完成后显示"关闭"按钮，用户确认后手动关闭</li>
+            <li><strong>横幅按钮改为「打开扩展管理页」</strong> - 由用户主动点击才跳转，优先聚焦已打开的 extensions 标签页</li>
+            <li><strong>移除自动刷新</strong> - 不再调用 chrome.runtime.reload()，避免 sidebar iframe 在重载后出现状态异常</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.6.2</span>
+          <span class="changelog-version-date">2026-08-23</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">🎨 深色主题重设计</h5>

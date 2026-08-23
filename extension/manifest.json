@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "零跑AI助手",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "随时用快捷键唤起本地AI助手，分析当前页面内容，使用本地大模型",
   "permissions": [
     "activeTab",

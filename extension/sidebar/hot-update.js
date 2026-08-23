@@ -305,33 +305,28 @@ async function startUpdate(dirHandle) {
     fileInfo.textContent = '更新完成！';
     setActiveStep(2, 'done');
     setActiveStep(3, 'done');
-    document.getElementById('step3').querySelector('.detail').textContent = '已打开扩展管理页，请点击 ↻ 刷新';
+    document.getElementById('step3').querySelector('.detail').textContent = '文件已覆盖，刷新扩展即可生效';
 
     // 记录完成状态（sidebar监听后显示成功横幅）
     try {
       chrome.storage.local.set({ hotUpdateCompleted: { version: targetVersion, time: Date.now() } });
     } catch (e) {}
 
-    // 直接打开/聚焦 chrome://extensions/ 页面
-    // （不能走 background 消息：background.js 文件刚被覆盖，运行中的旧 service worker 没有对应处理器）
-    openExtensionsPage();
-
     area.innerHTML = `
       <div class="success-box">
         <div class="success-icon">✅</div>
         <div class="success-title">更新成功！</div>
         <div style="font-size:13px;color:#e8e8e8;margin-bottom:8px;">已更新到 <strong>v${targetVersion}</strong></div>
-        <div style="font-size:12px;color:#999;line-height:1.7;">
-          已为你打开扩展管理页面<br>
-          请点击零跑AI助手卡片上的 <strong style="color:#8FE040;">↻ 刷新</strong> 按钮完成更新<br>
-          <span style="color:#666;">本窗口将在 3 秒后自动关闭</span>
+        <div style="font-size:12px;color:#999;line-height:1.7;margin-bottom:12px;">
+          文件已全部写入完成<br>
+          请返回侧边栏点击「打开扩展管理页」<br>
+          然后点击零跑AI助手卡片上的 <strong style="color:#8FE040;">↻ 刷新</strong> 按钮完成更新
         </div>
+        <button id="closeAfterDone" class="btn btn-primary" style="width:100%;">关闭</button>
       </div>
     `;
     document.getElementById('subtitle').textContent = '更新完成';
-
-    // 自动关闭窗口
-    setTimeout(() => { window.close(); }, 3000);
+    document.getElementById('closeAfterDone').addEventListener('click', () => window.close());
 
   } catch (err) {
     console.error('[热更新] 更新失败:', err);
