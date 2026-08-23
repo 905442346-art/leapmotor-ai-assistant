@@ -6021,18 +6021,34 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.6.1</span>
+          <span class="changelog-version-number">v1.6.2</span>
           <span class="changelog-version-date">2026-08-23</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">🎨 深色主题重设计</h5>
+          <ul>
+            <li><strong>石墨灰配色</strong> - 背景从纯黑(#050714)调整为中性石墨灰(#131416)，更接近 macOS 深色模式质感</li>
+            <li><strong>光晕大幅柔和</strong> - 品牌绿光晕透明度从 0.35 降到 0.08，不再像霓虹灯一样刺眼</li>
+            <li><strong>玻璃层更通透</strong> - 白色透明度从 0.06 降到 0.035，边框更细腻(0.07)，整体更克制高级</li>
+            <li><strong>文字层次优化</strong> - 主文字用 #F5F5F7（Apple 标准白），次要文字 60%、三级文字 38%，层次更自然</li>
+            <li><strong>品牌绿小面积点缀</strong> - 仅在 logo、发送按钮、就绪点等小面积使用绿色，不喧宾夺主</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.6.1</span>
+          <span class="changelog-version-date">2026-08-23</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 更新完成体验优化</h5>
           <ul>
-            <li><strong>更新窗口自动关闭</strong> - 热更新完成后显示成功提示（含新版本号与刷新指引），3 秒后自动关闭窗口</li>
-            <li><strong>自动跳转扩展管理页</strong> - 更新完成后自动打开（或聚焦已打开的）chrome://extensions/ 页面，无需手动寻找</li>
-            <li><strong>成功横幅提示</strong> - 侧边栏顶部显示「🎉 已成功更新到 vX.X.X」横幅，引导点击 ↻ 刷新完成更新</li>
-            <li><strong>一键刷新扩展</strong> - 横幅内置「↻ 一键刷新扩展」按钮，点击即等同于扩展管理页的刷新操作，无需手动跳转</li>
-            <li><strong>未刷新状态记忆</strong> - 若上次更新后未刷新扩展，下次打开助手时自动重新显示提示横幅</li>
+            <li><strong>更新窗口自动关闭</strong> - 热更新完成后显示成功提示，3 秒后自动关闭窗口</li>
+            <li><strong>自动跳转扩展管理页</strong> - 更新完成后自动打开（或聚焦已打开的）chrome://extensions/ 页面</li>
+            <li><strong>成功横幅提示</strong> - 侧边栏顶部显示更新成功横幅，引导点击 ↻ 刷新完成更新</li>
+            <li><strong>一键刷新扩展</strong> - 横幅内置「↻ 一键刷新扩展」按钮</li>
           </ul>
         </div>
       </div>
