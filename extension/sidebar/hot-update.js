@@ -304,18 +304,34 @@ async function startUpdate(dirHandle) {
     pbar.style.width = '100%';
     fileInfo.textContent = '更新完成！';
     setActiveStep(2, 'done');
-    setActiveStep(3, 'active');
+    setActiveStep(3, 'done');
+    document.getElementById('step3').querySelector('.detail').textContent = '已打开扩展管理页，请点击 ↻ 刷新';
+
+    // 记录完成状态（sidebar监听后显示成功横幅）
+    try {
+      chrome.storage.local.set({ hotUpdateCompleted: { version: targetVersion, time: Date.now() } });
+    } catch (e) {}
+
+    // 直接打开/聚焦 chrome://extensions/ 页面
+    // （不能走 background 消息：background.js 文件刚被覆盖，运行中的旧 service worker 没有对应处理器）
+    openExtensionsPage();
 
     area.innerHTML = `
       <div class="success-box">
         <div class="success-icon">✅</div>
         <div class="success-title">更新成功！</div>
-        <div style="font-size:12px;color:#999;margin-bottom:8px;">已更新到 v${targetVersion}，正在自动重启扩展...</div>
+        <div style="font-size:13px;color:#e8e8e8;margin-bottom:8px;">已更新到 <strong>v${targetVersion}</strong></div>
+        <div style="font-size:12px;color:#999;line-height:1.7;">
+          已为你打开扩展管理页面<br>
+          请点击零跑AI助手卡片上的 <strong style="color:#8FE040;">↻ 刷新</strong> 按钮完成更新<br>
+          <span style="color:#666;">本窗口将在 3 秒后自动关闭</span>
+        </div>
       </div>
     `;
     document.getElementById('subtitle').textContent = '更新完成';
 
-    setTimeout(() => { chrome.runtime.reload(); }, 1500);
+    // 自动关闭窗口
+    setTimeout(() => { window.close(); }, 3000);
 
   } catch (err) {
     console.error('[热更新] 更新失败:', err);
@@ -405,6 +421,34 @@ function showError(msg) {
     <button id="closeErrorBtn" class="btn btn-secondary" style="margin-top:12px;">关闭</button>
   `;
   document.getElementById('closeErrorBtn').addEventListener('click', () => window.close());
+}
+
+/**
+ * 打开/聚焦 chrome://extensions/ 页面
+ * 优先复用已打开的标签页，否则在普通窗口中新建（popup 窗口无法承载标签页）
+ */
+async function openExtensionsPage() {
+  try {
+    // 查找已打开的 chrome://extensions 标签页
+    const tabs = await chrome.tabs.query({ url: 'chrome://extensions/*' });
+    if (tabs && tabs.length > 0) {
+      const tab = tabs[0];
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      return;
+    }
+    // 没有已打开的：找普通窗口（优先当前聚焦的），在其中新建标签页
+    const windows = await chrome.windows.getAll();
+    const normalWin = windows.find(w => w.type === 'normal' && w.focused)
+                   || windows.find(w => w.type === 'normal');
+    if (normalWin) {
+      await chrome.tabs.create({ url: 'chrome://extensions/', active: true, windowId: normalWin.id });
+    } else {
+      await chrome.tabs.create({ url: 'chrome://extensions/', active: true });
+    }
+  } catch (e) {
+    console.warn('[热更新] 打开扩展管理页失败:', e);
+  }
 }
 
 // ---- IndexedDB ----

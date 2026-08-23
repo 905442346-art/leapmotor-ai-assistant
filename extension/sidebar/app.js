@@ -5166,6 +5166,22 @@ function initAutoUpdateSystem() {
     if (area === 'local' && changes.hotUpdateAuthorized) {
       HOT_UPDATE.refresh();
     }
+    // 热更新完成信号：显示成功横幅，提示用户刷新扩展
+    if (area === 'local' && changes.hotUpdateCompleted) {
+      const info = changes.hotUpdateCompleted.newValue;
+      if (info && info.version) {
+        showUpdateSuccessBanner(info.version);
+        hideHeaderUpdateIcon();
+      }
+    }
+  });
+
+  // 启动时检查：是否存在"文件已更新但扩展未刷新"的状态（用户上次没点刷新）
+  chrome.storage.local.get('hotUpdateCompleted', (data) => {
+    const info = data && data.hotUpdateCompleted;
+    if (info && info.version && compareVersions(info.version, currentVersion)) {
+      showUpdateSuccessBanner(info.version);
+    }
   });
 
   // 绑定事件
@@ -5244,6 +5260,53 @@ function hideHeaderUpdateIcon() {
   const btn = document.getElementById('headerUpdateBtn');
   if (btn) btn.style.display = 'none';
   localStorage.removeItem('pendingNewVersion');
+}
+
+/**
+ * 显示热更新成功横幅（提示用户刷新扩展）
+ * @param {string} version - 新版本号
+ */
+function showUpdateSuccessBanner(version) {
+  // 移除已有横幅
+  const existing = document.querySelector('.update-success-banner');
+  if (existing) existing.remove();
+
+  const v = version && !String(version).startsWith('v') ? 'v' + version : String(version || '');
+
+  const banner = document.createElement('div');
+  banner.className = 'update-success-banner';
+  banner.innerHTML = `
+    <div class="banner-icon">🎉</div>
+    <div class="banner-text">
+      <div class="banner-title">已成功更新到 ${v}！</div>
+      <div class="banner-desc">扩展管理页已打开，请点击 ↻ 刷新按钮完成更新</div>
+    </div>
+    <button class="banner-refresh-btn" title="自动刷新扩展（等同于点击扩展管理页的 ↻ 按钮）">↻ 一键刷新扩展</button>
+    <button class="banner-close" title="关闭">×</button>
+  `;
+  document.body.appendChild(banner);
+
+  // 一键刷新扩展（chrome.runtime.reload 与扩展管理页的 ↻ 按钮等效）
+  banner.querySelector('.banner-refresh-btn').addEventListener('click', () => {
+    try {
+      chrome.runtime.reload();
+    } catch (e) {
+      console.warn('[更新横幅] 自动刷新失败:', e);
+      const desc = banner.querySelector('.banner-desc');
+      if (desc) desc.textContent = '自动刷新失败，请到 chrome://extensions 手动点击 ↻ 刷新';
+    }
+  });
+
+  // 关闭横幅
+  banner.querySelector('.banner-close').addEventListener('click', () => {
+    banner.classList.remove('show');
+    setTimeout(() => banner.remove(), 300);
+  });
+
+  // 触发入场动画
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => banner.classList.add('show'));
+  });
 }
 
 /**
@@ -5958,9 +6021,26 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.6.0</span>
+          <span class="changelog-version-number">v1.6.1</span>
           <span class="changelog-version-date">2026-08-23</span>
           <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 更新完成体验优化</h5>
+          <ul>
+            <li><strong>更新窗口自动关闭</strong> - 热更新完成后显示成功提示（含新版本号与刷新指引），3 秒后自动关闭窗口</li>
+            <li><strong>自动跳转扩展管理页</strong> - 更新完成后自动打开（或聚焦已打开的）chrome://extensions/ 页面，无需手动寻找</li>
+            <li><strong>成功横幅提示</strong> - 侧边栏顶部显示「🎉 已成功更新到 vX.X.X」横幅，引导点击 ↻ 刷新完成更新</li>
+            <li><strong>一键刷新扩展</strong> - 横幅内置「↻ 一键刷新扩展」按钮，点击即等同于扩展管理页的刷新操作，无需手动跳转</li>
+            <li><strong>未刷新状态记忆</strong> - 若上次更新后未刷新扩展，下次打开助手时自动重新显示提示横幅</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.6.0</span>
+          <span class="changelog-version-date">2026-08-23</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
