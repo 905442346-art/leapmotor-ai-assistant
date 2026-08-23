@@ -5124,16 +5124,35 @@ function initAutoUpdateSystem() {
     versionDisplay.textContent = `v${currentVersion}`;
   }
 
-  // 更新 header 版本号小标签
-  const headerBadge = document.getElementById('headerVersionBadge');
-  if (headerBadge) {
-    headerBadge.textContent = `v${currentVersion}`;
+  // 头部更新按钮：默认隐藏，发现新版本时显示；点击打开"关于与更新"
+  const headerUpdateBtn = document.getElementById('headerUpdateBtn');
+  if (headerUpdateBtn) {
+    headerUpdateBtn.addEventListener('click', () => {
+      // 打开设置面板
+      openSettingsPanel();
+      // 切换到"关于与更新"tab
+      setTimeout(() => {
+        const aboutTab = document.querySelector('.settings-tab[data-tab="about"]');
+        if (aboutTab) aboutTab.click();
+        // 自动触发检查更新
+        handleManualCheckUpdate();
+      }, 150);
+    });
+  }
+
+  // 启动时：若上次已发现未更新的新版本（缓存中），直接显示图标（避免每次都等待网络）
+  const cachedNewVersion = localStorage.getItem('pendingNewVersion');
+  if (cachedNewVersion && compareVersions(cachedNewVersion, currentVersion)) {
+    showHeaderUpdateIcon(cachedNewVersion);
   }
 
   // 检测版本变化，显示"已更新到 vX.X.X"提示
   const lastVersion = localStorage.getItem('lastActiveVersion');
   if (lastVersion && lastVersion !== currentVersion) {
     showUpdateToast(currentVersion);
+    // 版本升级后清除缓存的待更新提示
+    localStorage.removeItem('pendingNewVersion');
+    hideHeaderUpdateIcon();
   }
   localStorage.setItem('lastActiveVersion', currentVersion);
 
@@ -5152,15 +5171,15 @@ function initAutoUpdateSystem() {
   // 绑定事件
   bindUpdateEvents();
 
-  // 检查是否需要自动检查更新
-  shouldAutoCheckUpdate().then(shouldCheck => {
-    if (shouldCheck) {
-      console.log('[在线更新] ⏰ 执行定时检查...');
-      checkForUpdates(true); // true = 静默模式
-    } else {
-      console.log('[在线更新] ℹ️ 跳过自动检查（距离上次检查时间过短）');
-    }
-  });
+  // 启动时自动静默检查更新（缩短间隔为1小时，提高更新可见性）
+  const lastCheck = parseInt(localStorage.getItem('lastUpdateCheckTime') || '0');
+  const oneHour = 60 * 60 * 1000;
+  if (Date.now() - lastCheck > oneHour) {
+    console.log('[在线更新] ⏰ 启动时静默检查更新...');
+    checkForUpdates(true);
+  } else {
+    console.log('[在线更新] ℹ️ 距离上次检查不足1小时，跳过启动检查');
+  }
 }
 
 /**
@@ -5200,6 +5219,31 @@ function showUpdateToast(version) {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+/**
+ * 显示头部更新提示图标
+ * @param {string} newVersion - 新版本号（不带v前缀也可以）
+ */
+function showHeaderUpdateIcon(newVersion) {
+  const btn = document.getElementById('headerUpdateBtn');
+  if (!btn) return;
+  const v = newVersion && !newVersion.startsWith('v') ? 'v' + newVersion : (newVersion || '');
+  btn.title = v ? `发现新版本 ${v}，点击更新` : '发现新版本，点击更新';
+  btn.style.display = 'flex';
+  // 缓存待更新版本号（跨会话持久显示图标）
+  if (newVersion) {
+    localStorage.setItem('pendingNewVersion', newVersion.replace(/^v/, ''));
+  }
+}
+
+/**
+ * 隐藏头部更新提示图标
+ */
+function hideHeaderUpdateIcon() {
+  const btn = document.getElementById('headerUpdateBtn');
+  if (btn) btn.style.display = 'none';
+  localStorage.removeItem('pendingNewVersion');
 }
 
 /**
@@ -5391,13 +5435,16 @@ async function checkForUpdates(silent = false) {
             showUpdateAvailableModal(releaseInfo);
           }
         } else {
-          // 静默模式：只在状态栏显示小提示
+          // 静默模式：状态栏提示 + 头部显示更新图标
           showUpdateStatus(`发现新版本 v${releaseInfo.tag_name}`, 'success');
+          showHeaderUpdateIcon(releaseInfo.tag_name);
         }
 
         return true;
       } else {
         console.log('[在线更新] ✅ 已是最新版本');
+        // 已是最新，确保头部图标隐藏（清除可能残留的缓存）
+        hideHeaderUpdateIcon();
         return false;
       }
     } else {
@@ -5626,6 +5673,8 @@ async function doHotUpdate(updateData) {
   console.log('[热更新] 🚀 打开热更新窗口，目标版本 v' + version);
 
   closeUpdateAvailableModal();
+  // 开始热更新时隐藏头部更新图标
+  hideHeaderUpdateIcon();
 
   if (!HOT_UPDATE.isSupported()) {
     showUpdateStatus('❌ 当前浏览器不支持热更新，请使用 Chrome 86+ 或手动下载ZIP更新', 'error');
@@ -5909,9 +5958,26 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.6.0</span>
+          <span class="changelog-version-date">2026-08-23</span>
+          <span class="changelog-badge latest-badge">最新</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
+          <ul>
+            <li><strong>自动检测新版本</strong> - 每次打开助手时自动静默检查 GitHub Release，1小时内不重复检查（避免频繁请求）</li>
+            <li><strong>头部更新图标提示</strong> - 发现新版本时，头部显示下载箭头图标 + 红色闪烁小圆点，呼吸动画吸引注意力；点击图标直接跳转到「关于与更新」并开始检查</li>
+            <li><strong>无新版本时不显示版本号</strong> - 头部不再常驻版本号徽章，界面更简洁；只有检测到更新时才显示提示图标</li>
+            <li><strong>跨会话记忆</strong> - 已发现但未更新的版本会缓存在 localStorage，下次打开时直接显示图标，无需再次等待网络</li>
+            <li><strong>更新后自动隐藏</strong> - 升级完成或开始热更新后，图标立即消失</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
           <span class="changelog-version-number">v1.5.9</span>
           <span class="changelog-version-date">2026-08-22</span>
-          <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">✨ 新功能</h5>
