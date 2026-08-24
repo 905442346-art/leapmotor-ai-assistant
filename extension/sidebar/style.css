@@ -3796,7 +3796,7 @@ body {
   justify-content: center;
   gap: 7px;
   height: 42px;
-  padding: 0 16px;
+  padding: 0 18px;
   border-radius: 12px;
   border: none;
   font-size: 14px;
@@ -3805,8 +3805,13 @@ body {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   font-family: inherit;
+  min-width: 0;
 }
-.update-btn svg { flex-shrink: 0; }
+.update-btn svg {
+  flex-shrink: 0;
+  display: block;
+  overflow: visible;
+}
 
 .update-btn-primary {
   flex: 2;
