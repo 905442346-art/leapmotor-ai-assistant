@@ -516,6 +516,24 @@ if (window.__localAIAssistantInjected) {
     return true;
   });
 
+  // 读取用户保存的悬浮按钮垂直位置
+  try {
+    chrome.storage && chrome.storage.local && chrome.storage.local.get(['fabTopPx'], (res) => {
+      if (res && typeof res.fabTopPx === 'number') {
+        _fab_top_px = res.fabTopPx;
+        // 按钮已存在则立即应用
+        if (_fab_instance) applyFabPosition(_fab_top_px);
+      }
+    });
+    // 跨标签页同步：其他页面修改后本页也实时更新位置
+    chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.fabTopPx && changes.fabTopPx.newValue != null) {
+        _fab_top_px = changes.fabTopPx.newValue;
+        if (_fab_instance) applyFabPosition(_fab_top_px);
+      }
+    });
+  } catch (_) { /* storage 不可用则忽略 */ }
+
   document.addEventListener('DOMContentLoaded', () => {
     isDOMReady = true;
     if (!sidebarIframe) createSidebar();
@@ -537,6 +555,7 @@ if (window.__localAIAssistantInjected) {
 // 使用 var 避免TDZ问题（var会被提升到函数顶部）
 var _fab_instance = null;  // 悬浮按钮DOM元素
 var _fab_observer = null;   // MutationObserver实例
+var _fab_top_px = null;     // 用户自定义的垂直位置（像素，从视口顶部算）；null 表示未自定义，使用默认居中
 
 /**
  * 安全创建悬浮按钮 - 确保 document.body 存在
@@ -595,12 +614,22 @@ function createFloatingButton() {
     // 添加到页面
     document.body.appendChild(_fab_instance);
 
+    // 应用保存的垂直位置（若有）
+    if (typeof _fab_top_px === 'number' && !isNaN(_fab_top_px)) {
+      applyFabPosition(_fab_top_px);
+    }
+
     // 绑定点击事件
     _fab_instance.addEventListener('click', handleFloatingButtonClick);
 
+    // 绑定拖拽（上下移动位置）
+    initFabDrag(_fab_instance);
+
     // 鼠标悬停效果
     _fab_instance.addEventListener('mouseenter', () => {
-      if (_fab_instance) _fab_instance.classList.add('hover');
+      if (_fab_instance && !_fab_instance.classList.contains('dragging')) {
+        _fab_instance.classList.add('hover');
+      }
     });
 
     _fab_instance.addEventListener('mouseleave', () => {
@@ -633,6 +662,115 @@ function createFloatingButton() {
   } catch (e) {
     console.error('[悬浮按钮] ❌ 创建失败:', e.message || e);
   }
+}
+
+/**
+ * 应用悬浮按钮的垂直位置（像素，从视口顶部计算）
+ * 会自动夹取在可视区域内（上下各留 40px 安全边距），并保持贴边滑出效果
+ */
+function applyFabPosition(topPx) {
+  if (!_fab_instance) return;
+  const btnH = _fab_instance.offsetHeight || 56;
+  const minTop = 20;
+  const maxTop = Math.max(minTop + btnH, window.innerHeight - btnH - 20);
+  const clamped = Math.max(minTop, Math.min(maxTop, topPx));
+  _fab_top_px = clamped;
+  // 用 top + translateY(0) 定位，避免与默认的 top:50% + translateY(-50%) 冲突
+  _fab_instance.style.setProperty('top', clamped + 'px', 'important');
+  _fab_instance.style.setProperty('transform', 'translateX(15px)', 'important');
+  _fab_instance.setAttribute('data-custom-pos', '1');
+}
+
+/**
+ * 悬浮按钮垂直拖拽：按下后上下拖动，松手保存位置
+ * - 拖动超过 5px 才判定为拖拽（否则视为点击）
+ * - 拖动中禁用 hover 滑出与动画
+ * - 拖动到接近边缘(60px)时自动磁吸到边缘
+ * - 松手后通过 chrome.storage.local 持久化
+ */
+function initFabDrag(btn) {
+  let startY = 0;
+  let startTop = 0;
+  let dragging = false;
+  let moved = false;
+
+  const onDown = (e) => {
+    // 只响应主键（鼠标左键 / 单指触摸）
+    if (e.button !== undefined && e.button !== 0) return;
+    const point = e.touches ? e.touches[0] : e;
+    startY = point.clientY;
+    const rect = btn.getBoundingClientRect();
+    // 如果是自定义位置，用 rect.top；否则从 50% 居中折算
+    startTop = (_fab_top_px != null) ? rect.top : (window.innerHeight / 2 - rect.height / 2);
+    dragging = true;
+    moved = false;
+    btn.classList.add('dragging');
+    btn.classList.remove('hover');
+    // 全局事件监听（拖到按钮外仍能响应）
+    window.addEventListener('mousemove', onMove, true);
+    window.addEventListener('mouseup', onUp, true);
+    window.addEventListener('touchmove', onMove, { passive: false, capture: true });
+    window.addEventListener('touchend', onUp, true);
+    // 防止拖动时选中文本/触发页面滚动
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const point = e.touches ? e.touches[0] : e;
+    const dy = point.clientY - startY;
+    if (!moved && Math.abs(dy) > 5) {
+      moved = true;
+    }
+    if (moved) {
+      e.preventDefault();
+      e.stopPropagation();
+      let newTop = startTop + dy;
+      // 磁吸到顶/底
+      const btnH = btn.offsetHeight || 56;
+      const snapZone = 60;
+      if (newTop < snapZone) newTop = 20;
+      else if (newTop > window.innerHeight - btnH - snapZone) newTop = window.innerHeight - btnH - 20;
+      applyFabPosition(newTop);
+    }
+  };
+
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    btn.classList.remove('dragging');
+    window.removeEventListener('mousemove', onMove, true);
+    window.removeEventListener('mouseup', onUp, true);
+    window.removeEventListener('touchmove', onMove, { passive: false, capture: true });
+    window.removeEventListener('touchend', onUp, true);
+
+    if (moved) {
+      // 保存位置到 storage，阻止后续 click
+      btn.setAttribute('data-drag-moved', '1');
+      setTimeout(() => btn.removeAttribute('data-drag-moved'), 50);
+      try {
+        chrome.storage && chrome.storage.local && chrome.storage.local.set({ fabTopPx: _fab_top_px });
+      } catch (_) { /* storage 不可用时静默失败，仅当前会话生效 */ }
+      // 触发一次轻微的贴边回收动画
+      btn.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      requestAnimationFrame(() => {
+        btn.style.setProperty('transform', 'translateX(15px)', 'important');
+        setTimeout(() => { btn.style.transition = ''; }, 350);
+      });
+    }
+  };
+
+  btn.addEventListener('mousedown', onDown, true);
+  btn.addEventListener('touchstart', onDown, { passive: false, capture: true });
+
+  // 拖动后阻止 click 事件误触发
+  btn.addEventListener('click', (e) => {
+    if (btn.hasAttribute('data-drag-moved') || moved) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  }, true);
 }
 
 /**
@@ -722,8 +860,8 @@ function injectFloatingButtonStyles() {
       right: 0 !important;
       transform: translateY(-50%) translateX(15px) !important;
       z-index: 2147483646 !important;
-      cursor: pointer !important;
-      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+      cursor: grab !important;
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), top 0s !important;
       user-select: none !important;
       -webkit-user-select: none !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
@@ -731,24 +869,51 @@ function injectFloatingButtonStyles() {
       visibility: visible !important;
       opacity: 1 !important;
       display: block !important;
+      touch-action: none !important;
+    }
+
+    /* 自定义垂直位置（用户拖拽后）：固定 top，不再垂直居中 */
+    #leapmotor-floating-btn[data-custom-pos="1"] {
+      transform: translateX(15px) !important;
     }
 
     /* 默认状态：半隐藏在右侧边缘，露出呼吸光晕 */
-    #leapmotor-floating-btn:not(:hover) {
-      transform: translateY(-50%) translateX(15px) !important;
+    #leapmotor-floating-btn:not(:hover):not(.dragging) {
+      /* 保持基础 transform 即可（默认 translateY(-50%) translateX(15px) 或 translateX(15px)） */
     }
 
-    #leapmotor-floating-btn:not(:hover) .floating-btn-inner {
+    #leapmotor-floating-btn:not(:hover):not(.dragging) .floating-btn-inner {
       animation: leapmotor-fab-breathe 3s ease-in-out infinite !important;
     }
 
-    /* 悬停状态：滑出显示完整按钮 */
-    #leapmotor-floating-btn:hover {
+    /* 悬停状态：滑出显示完整按钮（非拖动中） */
+    #leapmotor-floating-btn:hover:not(.dragging) {
       transform: translateY(-50%) translateX(0) !important;
     }
+    #leapmotor-floating-btn[data-custom-pos="1"]:hover:not(.dragging) {
+      transform: translateX(0) !important;
+    }
 
-    #leapmotor-floating-btn:hover .floating-btn-inner {
+    #leapmotor-floating-btn:hover:not(.dragging) .floating-btn-inner {
       animation: none !important;
+    }
+
+    /* 拖动中：紧贴右边缘、移除过渡/动画、cursor 变抓取中 */
+    #leapmotor-floating-btn.dragging {
+      cursor: grabbing !important;
+      transition: none !important;
+      transform: translateX(0) !important;
+    }
+    #leapmotor-floating-btn.dragging .floating-btn-inner {
+      animation: none !important;
+      transition: none !important;
+      box-shadow: 0 0 16px rgba(143, 224, 64, 0.7), 0 12px 36px rgba(90, 154, 27, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+      transform: scale(1.08) !important;
+    }
+    #leapmotor-floating-btn.dragging .floating-btn-tooltip {
+      opacity: 0 !important;
+      visibility: hidden !important;
+      transition: none !important;
     }
 
     /* 呼吸动画 - 让按钮更容易被发现 */
@@ -762,9 +927,13 @@ function injectFloatingButtonStyles() {
     }
 
     /* 点击反馈 */
-    #leapmotor-floating-btn:active,
-    #leapmotor-floating-btn.clicked {
-      transform: translateY(-50%) scale(0.92) translateX(0);
+    #leapmotor-floating-btn:active:not(.dragging),
+    #leapmotor-floating-btn.clicked:not(.dragging) {
+      transform: translateY(-50%) scale(0.92) translateX(0) !important;
+    }
+    #leapmotor-floating-btn[data-custom-pos="1"]:active:not(.dragging),
+    #leapmotor-floating-btn[data-custom-pos="1"].clicked:not(.dragging) {
+      transform: scale(0.92) translateX(0) !important;
     }
 
     /* ========== 液态玻璃按钮主体 ========== */
@@ -990,12 +1159,18 @@ function injectFloatingButtonStyles() {
 
     /* ========== 响应式适配 ========== */
     @media (max-width: 768px) {
-      #leapmotor-floating-btn {
+      #leapmotor-floating-btn:not([data-custom-pos="1"]) {
         transform: translateY(-50%) translateX(6px);
       }
+      #leapmotor-floating-btn[data-custom-pos="1"] {
+        transform: translateX(6px);
+      }
 
-      #leapmotor-floating-btn:hover {
+      #leapmotor-floating-btn:not([data-custom-pos="1"]):hover {
         transform: translateY(-50%) translateX(0);
+      }
+      #leapmotor-floating-btn[data-custom-pos="1"]:hover {
+        transform: translateX(0);
       }
 
       .floating-btn-inner {
@@ -1015,15 +1190,21 @@ function injectFloatingButtonStyles() {
     }
 
     /* ========== 侧边栏打开时的智能避让 ========== */
-    body.leapmotor-sidebar-open #leapmotor-floating-btn {
+    body.leapmotor-sidebar-open #leapmotor-floating-btn:not(.dragging) {
       transform: translateY(-50%) translateX(400px);
       opacity: 0.6;
       transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
+    body.leapmotor-sidebar-open #leapmotor-floating-btn[data-custom-pos="1"]:not(.dragging) {
+      transform: translateX(400px);
+    }
 
-    body.leapmotor-sidebar-open #leapmotor-floating-btn:hover {
+    body.leapmotor-sidebar-open #leapmotor-floating-btn:hover:not(.dragging) {
       opacity: 1;
       transform: translateY(-50%) translateX(388px);
+    }
+    body.leapmotor-sidebar-open #leapmotor-floating-btn[data-custom-pos="1"]:hover:not(.dragging) {
+      transform: translateX(388px);
     }
 
     body.leapmotor-sidebar-open #leapmotor-floating-btn .floating-btn-inner {
