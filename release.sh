@@ -132,12 +132,13 @@ ZIP_NAME=$(basename "${ZIP_PATH}")
 ZIP_URL=""
 for i in 1 2 3; do
   echo "   上传尝试 $i..."
+  # 注意: set -e 下命令替换失败会直接退出脚本，必须用 || echo 兜底让重试逻辑生效
   UPLOAD_RESULT=$(curl -sS --retry 3 --retry-delay 2 -m 300 -X POST \
     -H "Authorization: token ${TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     -H "Content-Type: application/zip" \
     --data-binary @"${ZIP_PATH}" \
-    "https://uploads.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets?name=${ZIP_NAME}" 2>&1)
+    "https://uploads.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets?name=${ZIP_NAME}" 2>&1 || echo "CURL_FAILED")
   ZIP_URL=$(echo "${UPLOAD_RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
   if [ -n "${ZIP_URL}" ]; then
     echo "✅ zip 资产上传成功"
@@ -155,7 +156,7 @@ echo "🔍 校验 Release 资产..."
 VERIFY_OK=false
 for i in 1 2 3; do
   ASSETS_JSON=$(curl -sS -m 30 -H "Authorization: token ${TOKEN}" -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets" 2>/dev/null)
+    "https://api.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets" 2>/dev/null || echo "[]")
   if echo "${ASSETS_JSON}" | grep -q "\"name\": *\"${ZIP_NAME}\""; then
     VERIFY_OK=true
     break
@@ -194,7 +195,7 @@ upload_asset() {
       -H "Accept: application/vnd.github+json" \
       -H "Content-Type: ${CONTENT_TYPE}" \
       --data-binary @"${FILE_PATH}" \
-      "${UPLOAD_URL}" 2>&1)
+      "${UPLOAD_URL}" 2>&1 || echo "CURL_FAILED")
     URL=$(echo "${RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
     if [ -n "${URL}" ]; then break; fi
     echo "   ⚠️ 第 $i 次上传失败，重试..."
