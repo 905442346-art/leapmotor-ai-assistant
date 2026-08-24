@@ -5633,6 +5633,48 @@ function compareVersions(v1, v2) {
 }
 
 /**
+ * 智能清洗/生成更新日志：
+ * - 如果 release.body 是默认模板文字（含"请下载下方zip包"等），或为空，则生成内置友好文案
+ * - 否则把 Markdown 渲染为 HTML
+ */
+function renderChangelog(releaseInfo) {
+  const version = (releaseInfo.tag_name || '').replace(/^v/, '');
+  const raw = (releaseInfo.body || '').trim();
+
+  // 检测是否是默认模板/占位文本
+  const isPlaceholder = !raw ||
+    /请下载下方\s*zip\s*包/i.test(raw) ||
+    /按\s*dist\/windows/i.test(raw) ||
+    /安装说明-\w+\.md/i.test(raw) ||
+    (raw.length < 15 && !/\*\*|^[-*]|^###/m.test(raw));
+
+  if (isPlaceholder) {
+    // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
+    const highlights = {
+      '1.6.5': [
+        '热更新下载失败自动重试 3 次，网络抖动不再中断更新',
+        '静态下载地址失效时自动走 GitHub API 查询真实资产，彻底避免 404',
+        '发布脚本增强上传重试与资产校验，确保版本发布即可用'
+      ],
+      '1.6.4': [
+        '深色模式整体对比度提升，文字更清晰',
+        '背景调整为石墨灰 Apple 风，移除刺眼亮青色',
+        '欢迎页图标、标题渐变、用户头像配色统一优化'
+      ],
+      '1.6.3': [
+        '深色模式配色全面重做（石墨灰 · Apple 风）',
+        '更新成功后支持一键跳转到扩展管理页'
+      ]
+    };
+    // 当前版本的亮点优先
+    const items = highlights[version] || ['功能优化与稳定性提升', '修复若干已知问题'];
+    return `<div class="md-content"><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul></div>`;
+  }
+
+  return formatChangelogMarkdown(raw);
+}
+
+/**
  * 显示新版本发现弹窗
  */
 function showUpdateAvailableModal(releaseInfo) {
@@ -5645,45 +5687,43 @@ function showUpdateAvailableModal(releaseInfo) {
   const changelogEl = document.getElementById('updateChangelogContent');
   const forceNoticeEl = document.getElementById('forceUpdateNotice');
 
+  const newVer = (releaseInfo.tag_name || updateInfoCache?.version || '未知').replace(/^v/, '');
   if (oldVerEl) oldVerEl.textContent = `v${currentVersion}`;
-  if (newVerEl) newVerEl.textContent = releaseInfo.tag_name || updateInfoCache?.version || '未知';
+  if (newVerEl) newVerEl.textContent = `v${newVer}`;
 
-  // 解析Markdown格式的更新日志
-  if (changelogEl && releaseInfo.body) {
-    changelogEl.innerHTML = formatChangelogMarkdown(releaseInfo.body);
+  // 渲染更新日志（自动清洗默认模板）
+  if (changelogEl) {
+    changelogEl.innerHTML = renderChangelog(releaseInfo);
   }
 
-  // 强制更新提示
-  if (forceNoticeEl && updateInfoCache?.isForceUpdate) {
-    forceNoticeEl.classList.remove('hidden');
+  // 强制更新提示：仅当 major/minor 差距≥1 或 tag 带 force 标识时显示
+  if (forceNoticeEl) {
+    const force = !!updateInfoCache?.isForceUpdate;
+    forceNoticeEl.classList.toggle('hidden', !force);
   }
 
-  // 根据热更新状态调整按钮
+  // 按钮状态：主按钮始终为「一键热更新」，副按钮为「手动下载」
   const hotUpdateBtn = document.getElementById('hotUpdateBtn');
   const downloadBtn = document.getElementById('downloadUpdateBtn');
   const hotUpdateHint = document.getElementById('hotUpdateHint');
+  const skipBtn = document.getElementById('skipUpdateBtn');
 
-  if (HOT_UPDATE.isEnabled()) {
-    // 热更新已启用：显示"一键热更新"按钮，隐藏普通下载
-    if (hotUpdateBtn) hotUpdateBtn.classList.remove('hidden');
-    if (downloadBtn) {
-      downloadBtn.classList.add('hidden');
-      downloadBtn.textContent = '📥 手动下载ZIP';
-      downloadBtn.style.cssText = 'background:transparent;border:1px solid var(--glass-border);color:var(--text-secondary);font-size:12px;padding:8px 14px;';
-    }
-    if (hotUpdateHint) hotUpdateHint.classList.remove('hidden');
-    if (downloadBtn) downloadBtn.classList.remove('hidden'); // 仍显示作为备选
-  } else {
-    // 热更新未启用：显示普通下载按钮 + 提示开启热更新
-    if (hotUpdateBtn) {
-      hotUpdateBtn.classList.remove('hidden');
-      hotUpdateBtn.textContent = '⚡ 一键热更新（推荐）';
-    }
-    if (downloadBtn) {
-      downloadBtn.textContent = '📥 手动下载ZIP';
-      downloadBtn.style.cssText = 'background:transparent;border:1px solid var(--glass-border);color:var(--text-secondary);font-size:12px;padding:8px 14px;';
-    }
-    if (hotUpdateHint) hotUpdateHint.classList.remove('hidden');
+  // 热更新主按钮（始终显示，作为推荐选项）
+  if (hotUpdateBtn) {
+    hotUpdateBtn.classList.remove('hidden');
+    const hotEnabled = HOT_UPDATE.isEnabled();
+    hotUpdateBtn.querySelector('span').textContent = hotEnabled ? '一键热更新' : '开启并热更新';
+  }
+  // 手动下载按钮作为次要选项（始终显示但弱化）
+  if (downloadBtn) {
+    downloadBtn.classList.remove('hidden');
+  }
+  // 提示条：未启用热更新时才显示说明
+  if (hotUpdateHint) {
+    hotUpdateHint.classList.toggle('hidden', HOT_UPDATE.isEnabled());
+  }
+  if (skipBtn) {
+    skipBtn.classList.remove('hidden');
   }
 
   modal.classList.remove('hidden');
