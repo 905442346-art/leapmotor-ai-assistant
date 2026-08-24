@@ -1,3 +1,15 @@
+// ========== 悬浮按钮（Floating Action Button）全局状态 ==========
+// 必须声明在主流程之前！
+// 原因：run_at=document_idle 时 DOM 已就绪，主流程会同步调用
+// createFloatingButtonSafe() 创建按钮并给 _fab_instance 赋值；
+// 若 var 声明（含 = null 赋值）放在主流程之后，会把已创建的按钮引用
+// 重置为 null，导致 applyFabPosition 永远空转 —— 拖拽完全失效。
+// （var 声明有提升，但 "= null" 赋值按源码顺序执行）
+var _fab_instance = null;    // 悬浮按钮DOM元素
+var _fab_observer = null;    // MutationObserver实例
+var _fab_top_px = null;      // 用户自定义的垂直位置（px）；null=未自定义，使用默认居中
+var _fab_orphan_timer = null;
+
 if (window.__localAIAssistantInjected) {
 } else {
   window.__localAIAssistantInjected = true;
@@ -555,10 +567,7 @@ if (window.__localAIAssistantInjected) {
 }
 
 // ========== 悬浮按钮（Floating Action Button）==========
-// 使用 var 避免TDZ问题（var会被提升到函数顶部）
-var _fab_instance = null;  // 悬浮按钮DOM元素
-var _fab_observer = null;   // MutationObserver实例
-var _fab_top_px = null;     // 用户自定义的垂直位置（像素，从视口顶部算）；null 表示未自定义，使用默认居中
+// （全局状态变量已移至文件顶部，见开头的 var 声明及注释说明）
 
 /**
  * 安全创建悬浮按钮 - 确保 document.body 存在
@@ -672,7 +681,12 @@ function createFloatingButton() {
  * 会自动夹取在可视区域内（上下各留 40px 安全边距），并保持贴边滑出效果
  */
 function applyFabPosition(topPx) {
-  if (!_fab_instance) return;
+  // 兜底：万一引用丢失，从DOM重新找回按钮
+  if (!_fab_instance) {
+    _fab_instance = document.getElementById('leapmotor-floating-btn');
+    if (!_fab_instance) return;
+  }
+  if (typeof topPx !== 'number' || isNaN(topPx)) return;
   const btnH = _fab_instance.offsetHeight || 56;
   const minTop = 20;
   const maxTop = Math.max(minTop + btnH, window.innerHeight - btnH - 20);
@@ -787,12 +801,16 @@ function initFabDrag(btn) {
       // 标记刚拖完，拦截紧随其后的 click（防止误开侧边栏）
       btn.setAttribute('data-drag-moved', '1');
       setTimeout(() => btn.removeAttribute('data-drag-moved'), 120);
-      // 持久化位置
-      try {
-        chrome.storage && chrome.storage.local && chrome.storage.local.set({ fabTopPx: _fab_top_px });
-        console.log('[悬浮按钮拖拽] ✅ 位置已保存');
-      } catch (err) {
-        console.warn('[悬浮按钮拖拽] 保存失败:', err.message);
+      // 持久化位置（仅保存有效数字，避免把 null 写入 storage）
+      if (typeof _fab_top_px === 'number' && !isNaN(_fab_top_px)) {
+        try {
+          chrome.storage && chrome.storage.local && chrome.storage.local.set({ fabTopPx: _fab_top_px });
+          console.log('[悬浮按钮拖拽] ✅ 位置已保存');
+        } catch (err) {
+          console.warn('[悬浮按钮拖拽] 保存失败:', err.message);
+        }
+      } else {
+        console.warn('[悬浮按钮拖拽] ⚠️ 位置无效，跳过保存');
       }
     }
   };
