@@ -534,6 +534,9 @@ if (window.__localAIAssistantInjected) {
     });
   } catch (_) { /* storage 不可用则忽略 */ }
 
+  // 启动孤儿 content script 检测（扩展重载后提示用户刷新页面）
+  watchFabOrphanState();
+
   document.addEventListener('DOMContentLoaded', () => {
     isDOMReady = true;
     if (!sidebarIframe) createSidebar();
@@ -682,93 +685,137 @@ function applyFabPosition(topPx) {
 }
 
 /**
- * 悬浮按钮垂直拖拽：按下后上下拖动，松手保存位置
+ * 检测孤儿 content script：扩展被重载（热更新/手动刷新）后，
+ * 已打开网页里的旧脚本事件监听全部失效，按钮点击/拖拽均无响应。
+ * 检测到孤儿状态时把按钮变成橙色警示 + tooltip 提示刷新页面。
+ */
+var _fab_orphan_timer = null;
+function watchFabOrphanState() {
+  if (_fab_orphan_timer) return; // 防止重复启动
+  _fab_orphan_timer = setInterval(() => {
+    let orphan = false;
+    try {
+      orphan = !chrome.runtime || !chrome.runtime.id;
+    } catch (_) {
+      orphan = true;
+    }
+    const btn = document.getElementById('leapmotor-floating-btn');
+    if (!btn) return;
+    const isOrphanNow = btn.classList.contains('fab-orphan');
+    if (orphan && !isOrphanNow) {
+      btn.classList.add('fab-orphan');
+      const tip = btn.querySelector('.floating-btn-tooltip');
+      if (tip) tip.textContent = '扩展已更新，请刷新页面（F5）';
+      console.warn('[悬浮按钮] ⚠️ 检测到扩展已重载，本页面脚本已失效。请刷新页面恢复按钮功能。');
+    }
+  }, 2000);
+}
+
+/**
+ * 悬浮按钮垂直拖拽（Pointer Events 版，鼠标/触摸统一处理）
+ * - pointerdown 后 setPointerCapture，即使指针移出按钮仍持续接收事件
  * - 拖动超过 5px 才判定为拖拽（否则视为点击）
- * - 拖动中禁用 hover 滑出与动画
+ * - 拖动中禁用 hover 滑出与动画，body 禁止选中文本
  * - 拖动到接近边缘(60px)时自动磁吸到边缘
  * - 松手后通过 chrome.storage.local 持久化
+ * - 全程 console.log 带 [悬浮按钮拖拽] 前缀，便于排查
  */
 function initFabDrag(btn) {
   let startY = 0;
   let startTop = 0;
   let dragging = false;
   let moved = false;
+  let activePointerId = null;
 
-  const onDown = (e) => {
-    // 只响应主键（鼠标左键 / 单指触摸）
-    if (e.button !== undefined && e.button !== 0) return;
-    const point = e.touches ? e.touches[0] : e;
-    startY = point.clientY;
-    const rect = btn.getBoundingClientRect();
-    // 如果是自定义位置，用 rect.top；否则从 50% 居中折算
-    startTop = (_fab_top_px != null) ? rect.top : (window.innerHeight / 2 - rect.height / 2);
+  const onPointerDown = (e) => {
+    // 鼠标只响应左键；触摸/笔直接响应
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // 已有指针在拖拽中，忽略新的按下
+    if (activePointerId !== null) return;
+
+    activePointerId = e.pointerId;
+    startY = e.clientY;
+    // rect.top 是当前视觉位置（含 translateY(-50%) 的效果），
+    // 直接作为新 top 的起点，设置后不会产生视觉跳动
+    startTop = btn.getBoundingClientRect().top;
     dragging = true;
     moved = false;
     btn.classList.add('dragging');
     btn.classList.remove('hover');
-    // 全局事件监听（拖到按钮外仍能响应）
-    window.addEventListener('mousemove', onMove, true);
-    window.addEventListener('mouseup', onUp, true);
-    window.addEventListener('touchmove', onMove, { passive: false, capture: true });
-    window.addEventListener('touchend', onUp, true);
-    // 防止拖动时选中文本/触发页面滚动
-    e.preventDefault();
+
+    // 关键：捕获指针，指针移出按钮/越过 iframe 边界仍持续收到 move/up
+    try { btn.setPointerCapture(e.pointerId); } catch (err) {
+      console.warn('[悬浮按钮拖拽] setPointerCapture 失败:', err.message);
+    }
+    console.log('[悬浮按钮拖拽] 按下 startY=' + startY + ' startTop=' + startTop);
+    // 阻止 mousedown 穿透（避免触发页面拖拽/选择），但不 preventDefault
+    // （pointerdown 的 preventDefault 在部分浏览器会干扰后续 pointer 事件）
     e.stopPropagation();
   };
 
-  const onMove = (e) => {
-    if (!dragging) return;
-    const point = e.touches ? e.touches[0] : e;
-    const dy = point.clientY - startY;
+  const onPointerMove = (e) => {
+    if (!dragging || e.pointerId !== activePointerId) return;
+    const dy = e.clientY - startY;
     if (!moved && Math.abs(dy) > 5) {
       moved = true;
+      document.body.classList.add('leapmotor-fab-dragging');
+      console.log('[悬浮按钮拖拽] 进入拖动模式 dy=' + dy);
     }
-    if (moved) {
-      e.preventDefault();
-      e.stopPropagation();
-      let newTop = startTop + dy;
-      // 磁吸到顶/底
-      const btnH = btn.offsetHeight || 56;
-      const snapZone = 60;
-      if (newTop < snapZone) newTop = 20;
-      else if (newTop > window.innerHeight - btnH - snapZone) newTop = window.innerHeight - btnH - 20;
-      applyFabPosition(newTop);
-    }
+    if (!moved) return;
+
+    e.preventDefault();
+    let newTop = startTop + dy;
+    // 磁吸到顶/底（60px 吸附区，边缘留 20px 安全距离）
+    const btnH = btn.offsetHeight || 56;
+    const snapZone = 60;
+    if (newTop < snapZone) newTop = 20;
+    else if (newTop > window.innerHeight - btnH - snapZone) newTop = window.innerHeight - btnH - 20;
+    applyFabPosition(newTop);
   };
 
-  const onUp = (e) => {
+  const finishDrag = (e) => {
     if (!dragging) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
     dragging = false;
+    activePointerId = null;
     btn.classList.remove('dragging');
-    window.removeEventListener('mousemove', onMove, true);
-    window.removeEventListener('mouseup', onUp, true);
-    window.removeEventListener('touchmove', onMove, { passive: false, capture: true });
-    window.removeEventListener('touchend', onUp, true);
+    document.body.classList.remove('leapmotor-fab-dragging');
+    try { btn.releasePointerCapture && btn.releasePointerCapture(e.pointerId); } catch (_) {}
 
     if (moved) {
-      // 保存位置到 storage，阻止后续 click
+      console.log('[悬浮按钮拖拽] 松手，位置 top=' + _fab_top_px + 'px，moved=' + moved);
+      // 标记刚拖完，拦截紧随其后的 click（防止误开侧边栏）
       btn.setAttribute('data-drag-moved', '1');
-      setTimeout(() => btn.removeAttribute('data-drag-moved'), 50);
+      setTimeout(() => btn.removeAttribute('data-drag-moved'), 120);
+      // 持久化位置
       try {
         chrome.storage && chrome.storage.local && chrome.storage.local.set({ fabTopPx: _fab_top_px });
-      } catch (_) { /* storage 不可用时静默失败，仅当前会话生效 */ }
-      // 触发一次轻微的贴边回收动画
-      btn.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-      requestAnimationFrame(() => {
-        btn.style.setProperty('transform', 'translateX(15px)', 'important');
-        setTimeout(() => { btn.style.transition = ''; }, 350);
-      });
+        console.log('[悬浮按钮拖拽] ✅ 位置已保存');
+      } catch (err) {
+        console.warn('[悬浮按钮拖拽] 保存失败:', err.message);
+      }
     }
   };
 
-  btn.addEventListener('mousedown', onDown, true);
-  btn.addEventListener('touchstart', onDown, { passive: false, capture: true });
+  btn.addEventListener('pointerdown', onPointerDown);
+  btn.addEventListener('pointermove', onPointerMove);
+  btn.addEventListener('pointerup', finishDrag);
+  btn.addEventListener('pointercancel', finishDrag);
 
-  // 拖动后阻止 click 事件误触发
+  // 兜底：万一 pointer capture 未生效（异常页面），window 捕获阶段也处理
+  window.addEventListener('pointermove', (e) => {
+    if (dragging && e.pointerId === activePointerId) onPointerMove(e);
+  }, true);
+  window.addEventListener('pointerup', (e) => {
+    if (dragging && e.pointerId === activePointerId) finishDrag(e);
+  }, true);
+
+  // 拖动结束后拦截 click 误触发（捕获阶段优先于 handleFloatingButtonClick）
   btn.addEventListener('click', (e) => {
-    if (btn.hasAttribute('data-drag-moved') || moved) {
+    if (btn.hasAttribute('data-drag-moved')) {
       e.stopImmediatePropagation();
       e.preventDefault();
+      console.log('[悬浮按钮拖拽] 已拦截拖动后的 click');
     }
   }, true);
 }
@@ -914,6 +961,32 @@ function injectFloatingButtonStyles() {
       opacity: 0 !important;
       visibility: hidden !important;
       transition: none !important;
+    }
+
+    /* 拖动进行中：整个页面禁止选中文本 */
+    body.leapmotor-fab-dragging {
+      user-select: none !important;
+      -webkit-user-select: none !important;
+      cursor: grabbing !important;
+    }
+
+    /* 孤儿状态（扩展已重载，需刷新页面）：橙色警示 + 常驻滑出 */
+    #leapmotor-floating-btn.fab-orphan {
+      transform: translateX(0) !important;
+      cursor: not-allowed !important;
+    }
+    #leapmotor-floating-btn.fab-orphan .floating-btn-inner {
+      background: linear-gradient(135deg, rgba(255, 159, 10, 0.95) 0%, rgba(255, 87, 34, 0.92) 100%) !important;
+      animation: leapmotor-fab-breathe 1.2s ease-in-out infinite !important;
+    }
+    #leapmotor-floating-btn.fab-orphan .floating-btn-tooltip {
+      opacity: 1 !important;
+      visibility: visible !important;
+      transform: translateX(-8px) !important;
+      border-color: rgba(255, 159, 10, 0.6) !important;
+      color: #FF9F0A !important;
+      font-size: 11px !important;
+      white-space: nowrap !important;
     }
 
     /* 呼吸动画 - 让按钮更容易被发现 */

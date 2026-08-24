@@ -5279,7 +5279,7 @@ function showUpdateSuccessBanner(version) {
     <div class="banner-icon">🎉</div>
     <div class="banner-text">
       <div class="banner-title">已成功更新到 ${v}！</div>
-      <div class="banner-desc">请点击右侧按钮打开扩展管理页，然后点击零跑AI助手卡片上的 ↻ 刷新</div>
+      <div class="banner-desc">① 点击右侧按钮打开扩展管理页，点击零跑AI助手卡片上的 ↻ 刷新<br>② 刷新后请刷新已打开的网页（F5），悬浮按钮才会恢复可用</div>
     </div>
     <button class="banner-refresh-btn" title="打开 chrome://extensions 扩展管理页">🔗 打开扩展管理页</button>
     <button class="banner-close" title="关闭">×</button>
