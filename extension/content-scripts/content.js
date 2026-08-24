@@ -212,6 +212,9 @@ if (window.__localAIAssistantInjected) {
     if (document.getElementById('local-ai-assistant-sidebar')) {
       const existing = document.getElementById('local-ai-assistant-sidebar');
       sidebarIframe = existing;
+      // 兜底：如果DOM中已有iframe（例如旧版本遗留/热更新后残留），必须补上message监听器，
+      // 否则sidebar里发 GET_PAGE_CONTENT 父窗口无响应，AI永远拿不到页面内容。
+      window.addEventListener('message', handleSidebarMessage);
       return;
     }
 
@@ -564,6 +567,10 @@ if (window.__localAIAssistantInjected) {
 
   // 初始化全局快捷键监听（在content script层面拦截）
   initGlobalKeyboardListener();
+
+  // 把切换侧边栏的能力暴露给FAB等全局作用域的函数使用
+  // （handleFloatingButtonClick 位于IIFE外，需要通过此钩子调用主流程）
+  window.__leapAIAssistantToggleSidebar = toggleSidebar;
 }
 
 // ========== 悬浮按钮（Floating Action Button）==========
@@ -839,60 +846,21 @@ function initFabDrag(btn) {
 }
 
 /**
- * 悬浮按钮点击处理 - 完全自包含，不依赖外部函数
+ * 悬浮按钮点击处理 - 通过主流程暴露的钩子切换侧边栏
+ * 之前这里直接操作DOM创建iframe，绕过了createSidebar()，
+ * 导致message监听器未注册，sidebar发送GET_PAGE_CONTENT时父窗口无响应，
+ * 页面内容永远获取不到 → AI回复"无法查看当前页面"。
  */
 function handleFloatingButtonClick(e) {
   e.preventDefault();
   e.stopPropagation();
 
-  // ========== 直接操作侧边栏（不调用任何外部函数）==========
   try {
-    // 查找或获取侧边栏iframe
-    let sidebar = document.getElementById('local-ai-assistant-sidebar');
-
-    // 如果不存在，创建它
-    if (!sidebar) {
-      console.log('[悬浮按钮] 创建侧边栏...');
-      sidebar = document.createElement('iframe');
-      sidebar.id = 'local-ai-assistant-sidebar';
-      sidebar.src = chrome.runtime.getURL('sidebar/index.html');
-      sidebar.style.cssText = `
-        position: fixed; top: 0; right: 0; width: 400px; height: 100vh;
-        border: none; z-index: 2147483647;
-        box-shadow: -8px 0 32px rgba(10,26,47,0.18);
-        transform: translateX(100%);
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
-        background: #F0F2F8; opacity: 0;
-      `;
-      // iframe加载完成后淡入，避免黑屏闪烁
-      sidebar.addEventListener('load', () => {
-        requestAnimationFrame(() => {
-          if (sidebar) sidebar.style.opacity = '1';
-        });
-      });
-      document.body.appendChild(sidebar);
-
-      // 延迟打开（等待iframe加载）
-      setTimeout(() => {
-        if (sidebar && sidebar.style.transform !== 'translateX(0)') {
-          sidebar.style.transform = 'translateX(0)';
-        }
-      }, 150);
-
-      console.log('[悬浮按钮] ✅ 已创建并打开侧边栏');
+    const toggle = window.__leapAIAssistantToggleSidebar;
+    if (typeof toggle === 'function') {
+      toggle();
     } else {
-      // 已存在，切换显示/隐藏
-      const isOpen = sidebar.style.transform === 'translateX(0)' || sidebar.style.transform === '';
-
-      if (isOpen) {
-        // 关闭
-        sidebar.style.transform = 'translateX(100%)';
-        console.log('[悬浮按钮] 🚪 已关闭侧边栏');
-      } else {
-        // 打开
-        sidebar.style.transform = 'translateX(0)';
-        console.log('[悬浮按钮] ✅ 已打开侧边栏');
-      }
+      console.warn('[悬浮按钮] 主流程尚未就绪，无法打开侧边栏');
     }
   } catch (err) {
     console.error('[悬浮按钮] ❌ 操作失败:', err.message || err);
