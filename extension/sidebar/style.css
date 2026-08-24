@@ -58,37 +58,37 @@
   --lp-cyan: #5AC8E0;
   --lp-blue: #5A8FE0;
 
-  --bg-base: #131416;
-  --glass-opacity: 0.05;
+  --bg-base: #1C1D1F;
+  --glass-opacity: 0.08;
   --glass-blur: 24px;
-  --glass-saturation: 150%;
-  --glass-border-opacity: 0.08;
+  --glass-saturation: 160%;
+  --glass-border-opacity: 0.1;
 
   --text-primary: #F5F5F7;
-  --text-secondary: rgba(245, 245, 247, 0.6);
-  --text-tertiary: rgba(245, 245, 247, 0.38);
+  --text-secondary: rgba(245, 245, 247, 0.72);
+  --text-tertiary: rgba(245, 245, 247, 0.5);
 
   --accent: #8FE040;
-  --accent-glow: rgba(143, 224, 64, 0.12);
+  --accent-glow: rgba(143, 224, 64, 0.15);
   --accent-deep: #4A7F18;
   --accent-text: #FFFFFF;
   --success: #30D158;
   --error: #FF453A;
 
-  --shadow-glow: 0 0 20px rgba(143, 224, 64, 0.08);
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --shadow-inset: inset 0 1px 1px rgba(255, 255, 255, 0.04);
+  --shadow-glow: 0 0 24px rgba(143, 224, 64, 0.1);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-inset: inset 0 1px 1px rgba(255, 255, 255, 0.05);
   --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 
-  --glass-bg: rgba(255, 255, 255, 0.035);
-  --glass-bg-hover: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.07);
-  --glass-border-bright: rgba(255, 255, 255, 0.12);
-  --input-bg: rgba(255, 255, 255, 0.04);
-  --input-focus-bg: rgba(255, 255, 255, 0.06);
-  --code-bg: rgba(255, 255, 255, 0.06);
-  --bubble-ai-bg: rgba(255, 255, 255, 0.035);
-  --bubble-user-bg: rgba(90, 200, 224, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-hover: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border-bright: rgba(255, 255, 255, 0.15);
+  --input-bg: rgba(255, 255, 255, 0.06);
+  --input-focus-bg: rgba(255, 255, 255, 0.09);
+  --code-bg: rgba(255, 255, 255, 0.08);
+  --bubble-ai-bg: rgba(255, 255, 255, 0.05);
+  --bubble-user-bg: rgba(90, 200, 224, 0.12);
 }
 
 html, body {
@@ -145,8 +145,8 @@ body {
 
 [data-theme="light"] .app-container::before { opacity: 0.3; }
 [data-theme="light"] .app-container::after { opacity: 0.2; }
-[data-theme="dark"] .app-container::before { opacity: 0.12; background: radial-gradient(ellipse at 30% 20%, var(--accent-glow) 0%, transparent 55%); }
-[data-theme="dark"] .app-container::after { opacity: 0.08; background: radial-gradient(ellipse at 70% 80%, rgba(255,255,255,0.04) 0%, transparent 55%); }
+[data-theme="dark"] .app-container::before { opacity: 0.18; background: radial-gradient(ellipse at 30% 20%, var(--accent-glow) 0%, transparent 55%); }
+[data-theme="dark"] .app-container::after { opacity: 0.1; background: radial-gradient(ellipse at 70% 80%, rgba(255,255,255,0.05) 0%, transparent 55%); }
 
 @keyframes sonomaFloat1 {
   0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
@@ -269,7 +269,7 @@ body {
   animation: dotBlink 1.5s ease-in-out infinite;
 }
 
-[data-theme="dark"] .update-dot { border-color: #131416; }
+[data-theme="dark"] .update-dot { border-color: #1C1D1F; }
 
 @keyframes updatePulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
@@ -1607,7 +1607,7 @@ body {
 .welcome-icon {
   width: 96px; height: 96px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--accent-glow), rgba(0,212,255,0.1));
+  background: linear-gradient(135deg, var(--accent-glow), rgba(255,255,255,0.03));
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--glass-border-bright);
@@ -1640,6 +1640,13 @@ body {
   margin-bottom: 10px;
   color: var(--text-primary);
   background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+[data-theme="dark"] .welcome-screen h2 {
+  background: linear-gradient(135deg, #FFFFFF 0%, var(--text-primary) 70%, var(--accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -4168,4 +4175,54 @@ body {
 .update-success-banner .banner-close:hover {
   background: var(--glass-bg-hover);
   color: var(--text-primary);
+}
+
+/* ========== 深色模式细节微调（覆盖硬编码亮色/青色） ========== */
+[data-theme="dark"] .message.user .message-avatar {
+  background: linear-gradient(135deg, rgba(90, 200, 224, 0.18), rgba(90, 143, 224, 0.1));
+  border: 1px solid rgba(90, 200, 224, 0.2);
+}
+[data-theme="dark"] .message.user .message-bubble {
+  border-color: rgba(90, 200, 224, 0.15);
+}
+[data-theme="dark"] .page-item.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+[data-theme="dark"] .tab-picker-content {
+  background: rgba(28, 29, 31, 0.85);
+}
+[data-theme="dark"] .about-logo {
+  background: linear-gradient(135deg, rgba(143, 224, 64, 0.12), rgba(255, 255, 255, 0.03));
+}
+[data-theme="dark"] .oa-flow-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] .oa-flow-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--accent);
+}
+[data-theme="dark"] .settings-panel {
+  background: var(--bg-base);
+}
+[data-theme="dark"] .workflow-item {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+[data-theme="dark"] .settings-tab {
+  color: var(--text-tertiary);
+}
+[data-theme="dark"] .settings-tab.active {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+[data-theme="dark"] .input-wrapper {
+  box-shadow: none;
+}
+[data-theme="dark"] .chip:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
 }

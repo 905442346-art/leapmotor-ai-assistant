@@ -7,7 +7,7 @@
     var theme = localStorage.getItem('theme') || 'light';
     document.documentElement.setAttribute('data-theme', theme);
     // 设置 body 背景色防止 iframe 初始空白/黑屏
-    document.documentElement.style.background = theme === 'dark' ? '#050714' : '#F0F2F8';
+    document.documentElement.style.background = theme === 'dark' ? '#1C1D1F' : '#F0F2F8';
   } catch(e) {
     // localStorage 不可用时默认浅色
     document.documentElement.setAttribute('data-theme', 'light');
