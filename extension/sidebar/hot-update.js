@@ -189,6 +189,56 @@ async function selectAndUpdate() {
 }
 
 /**
+ * 解析 ZIP 下载地址：优先静态路径，不可用时通过 GitHub API 查询 Release 真实资产
+ * 防止「Release 已建但资产未传上」导致 404
+ */
+async function resolveZipUrl(version) {
+  const staticUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/v${version}/leapmotor-ai-assistant-v${version}.zip`;
+  try {
+    const probe = await fetch(staticUrl, { method: 'HEAD' });
+    if (probe.ok) return staticUrl;
+    console.warn(`[热更新] 静态地址不可用 (HTTP ${probe.status})，改用 GitHub API 查询资产`);
+  } catch (e) {
+    console.warn('[热更新] 静态地址探测失败:', e.message, '，改用 GitHub API 查询资产');
+  }
+  const apiResp = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/v${version}`);
+  if (!apiResp.ok) throw new Error(`查询 Release v${version} 失败: HTTP ${apiResp.status}`);
+  const release = await apiResp.json();
+  const expected = `leapmotor-ai-assistant-v${version}.zip`;
+  const assets = release.assets || [];
+  const asset = assets.find(a => a.name === expected) || assets.find(a => a.name.endsWith('.zip'));
+  if (!asset) throw new Error(`Release v${version} 暂无 zip 资产（可能正在上传中），请稍后重试`);
+  return asset.browser_download_url;
+}
+
+/**
+ * 下载 ZIP 并显示进度，返回 Uint8Array
+ */
+async function downloadZip(url, pbar, fileInfo) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`下载失败: HTTP ${resp.status}`);
+  const totalSize = parseInt(resp.headers.get('content-length') || '0');
+  const reader = resp.body.getReader();
+  let received = 0;
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (totalSize > 0) {
+      const pct = Math.round((received / totalSize) * 100);
+      if (pbar) pbar.style.width = pct + '%';
+      if (fileInfo) fileInfo.textContent = `下载中... ${pct}% (${formatBytes(received)}/${formatBytes(totalSize)})`;
+    } else {
+      if (fileInfo) fileInfo.textContent = `下载中... ${formatBytes(received)}`;
+    }
+  }
+  const buffer = await new Blob(chunks).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+/**
  * 下载 GitHub Release ZIP，解压并覆盖 extension 目录
  */
 async function startUpdate(dirHandle) {
@@ -227,32 +277,25 @@ async function startUpdate(dirHandle) {
   fileInfo.textContent = '正在下载更新包...';
 
   try {
-    // 1. 下载 ZIP
-    const zipUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/v${targetVersion}/leapmotor-ai-assistant-v${targetVersion}.zip`;
-    console.log('[热更新] 📦 下载ZIP:', zipUrl);
-
-    const resp = await fetch(zipUrl);
-    if (!resp.ok) throw new Error(`下载失败: HTTP ${resp.status}`);
-
-    const totalSize = parseInt(resp.headers.get('content-length') || '0');
-    const reader = resp.body.getReader();
-    let received = 0;
-    const chunks = [];
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-      if (totalSize > 0) {
-        const pct = Math.round((received / totalSize) * 100);
-        pbar.style.width = pct + '%';
-        fileInfo.textContent = `下载中... ${pct}% (${formatBytes(received)}/${formatBytes(totalSize)})`;
-      } else {
-        fileInfo.textContent = `下载中... ${formatBytes(received)}`;
+    // 1. 下载 ZIP（自动重试 3 次；静态地址 404 时回退 GitHub API 查询真实资产地址）
+    let zipData = null;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const zipUrl = await resolveZipUrl(targetVersion);
+        console.log(`[热更新] 📦 下载ZIP (第${attempt}次):`, zipUrl);
+        zipData = await downloadZip(zipUrl, pbar, fileInfo);
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[热更新] 下载失败(第${attempt}次):`, err.message);
+        if (attempt < 3) {
+          fileInfo.textContent = `下载失败（${err.message}），5 秒后自动重试...`;
+          await new Promise(r => setTimeout(r, 5000));
+        }
       }
     }
-    const zipBuffer = new Blob(chunks).arrayBuffer();
-    const zipData = new Uint8Array(await zipBuffer);
+    if (!zipData) throw lastErr;
     console.log('[热更新] ✅ ZIP下载完成:', formatBytes(zipData.length));
 
     // 2. 解析 ZIP 并写入文件

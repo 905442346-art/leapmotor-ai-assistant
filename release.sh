@@ -75,8 +75,24 @@ if ! git -C "${PROJECT_ROOT}" rev-parse -q --verify "refs/tags/${TAG}" >/dev/nul
   git -C "${PROJECT_ROOT}" tag -a "${TAG}" -m "Release ${TAG}"
 fi
 
+# 推送 tag（重试3次；远端已存在则视为成功，避免 SSL 抖动误报）
 echo "📤 推送 tag ${TAG}..."
-git -C "${PROJECT_ROOT}" push origin "${TAG}" || echo "⚠️  push tag 失败（可能已存在或网络问题）"
+TAG_OK=false
+for i in 1 2 3; do
+  if git -C "${PROJECT_ROOT}" ls-remote --exit-code origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+    echo "   ✅ tag 已存在于远端"
+    TAG_OK=true; break
+  fi
+  if git -C "${PROJECT_ROOT}" push origin "${TAG}" 2>/dev/null; then
+    echo "   ✅ tag 推送成功"
+    TAG_OK=true; break
+  fi
+  echo "   尝试 $i: tag 推送失败，3 秒后重试..."
+  sleep 3
+done
+if [ "${TAG_OK}" != "true" ]; then
+  echo "⚠️  tag 推送失败（网络问题），Release 仍将尝试创建"
+fi
 echo ""
 
 # 4. 用 GitHub API 创建 Release
@@ -109,25 +125,50 @@ fi
 echo "✅ Release 已创建 (id: ${RELEASE_ID})"
 echo "🔗 https://github.com/${REPO_SLUG}/releases/tag/${TAG}"
 
-# 5. 上传 zip 资产
+# 5. 上传 zip 资产（重试3次，防止「Release已建但资产没传上」导致热更新404）
 echo ""
 echo "📎 上传安装包到 Release..."
-UPLOAD_URL="https://uploads.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets?name=$(basename "${ZIP_PATH}")"
-UPLOAD_RESULT=$(curl -sS -X POST \
-  -H "Authorization: token ${TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  -H "Content-Type: application/zip" \
-  --data-binary @"${ZIP_PATH}" \
-  "${UPLOAD_URL}" 2>&1)
+ZIP_NAME=$(basename "${ZIP_PATH}")
+ZIP_URL=""
+for i in 1 2 3; do
+  echo "   上传尝试 $i..."
+  UPLOAD_RESULT=$(curl -sS --retry 3 --retry-delay 2 -m 300 -X POST \
+    -H "Authorization: token ${TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/zip" \
+    --data-binary @"${ZIP_PATH}" \
+    "https://uploads.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets?name=${ZIP_NAME}" 2>&1)
+  ZIP_URL=$(echo "${UPLOAD_RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
+  if [ -n "${ZIP_URL}" ]; then
+    echo "✅ zip 资产上传成功"
+    echo "🔗 ${ZIP_URL}"
+    break
+  fi
+  echo "   ⚠️ 第 $i 次上传失败:"
+  echo "${UPLOAD_RESULT}" | head -5
+  if [ "$i" -lt 3 ]; then echo "   等待 5 秒后重试..."; sleep 5; fi
+done
 
-ASSET_URL=$(echo "${UPLOAD_RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
-if [ -n "${ASSET_URL}" ]; then
-  echo "✅ zip 资产上传成功"
-  echo "🔗 ${ASSET_URL}"
+# 上传结果校验：通过 API 查询资产列表，确认 zip 真实存在且已就绪
+echo ""
+echo "🔍 校验 Release 资产..."
+VERIFY_OK=false
+for i in 1 2 3; do
+  ASSETS_JSON=$(curl -sS -m 30 -H "Authorization: token ${TOKEN}" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets" 2>/dev/null)
+  if echo "${ASSETS_JSON}" | grep -q "\"name\": *\"${ZIP_NAME}\""; then
+    VERIFY_OK=true
+    break
+  fi
+  echo "   尝试 $i: 未发现 zip 资产，3 秒后重查..."
+  sleep 3
+done
+if [ "${VERIFY_OK}" = "true" ]; then
+  echo "   ✅ zip 资产已确认存在，热更新下载地址可用"
 else
-  echo "⚠️  zip 资产上传失败（uploads.github.com 可能不可达），可手动上传:"
-  echo "   https://github.com/${REPO_SLUG}/releases/${TAG}"
-  echo "${UPLOAD_RESULT}" | head -10
+  echo "   ❌ 未检测到 zip 资产！热更新将 404，请到 Release 页面手动上传:"
+  echo "      https://github.com/${REPO_SLUG}/releases/${TAG}"
+  echo "      本地包路径: ${ZIP_PATH}"
 fi
 
 # 6. 上传一键更新脚本（独立资产，方便用户单独下载）
@@ -145,13 +186,20 @@ upload_asset() {
   echo "📎 上传 ${ASSET_NAME} 到 Release..."
   # GitHub 资产名只接受 ASCII，直接用英文资产名（文件内容仍含中文注释）
   local UPLOAD_URL="https://uploads.github.com/repos/${REPO_SLUG}/releases/${RELEASE_ID}/assets?name=${ASSET_NAME}"
-  local RESULT=$(curl -sS -X POST \
-    -H "Authorization: token ${TOKEN}" \
-    -H "Accept: application/vnd.github+json" \
-    -H "Content-Type: ${CONTENT_TYPE}" \
-    --data-binary @"${FILE_PATH}" \
-    "${UPLOAD_URL}" 2>&1)
-  local URL=$(echo "${RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
+  local URL=""
+  local RESULT=""
+  for i in 1 2 3; do
+    RESULT=$(curl -sS --retry 2 --retry-delay 2 -m 120 -X POST \
+      -H "Authorization: token ${TOKEN}" \
+      -H "Accept: application/vnd.github+json" \
+      -H "Content-Type: ${CONTENT_TYPE}" \
+      --data-binary @"${FILE_PATH}" \
+      "${UPLOAD_URL}" 2>&1)
+    URL=$(echo "${RESULT}" | grep -o '"browser_download_url": *"[^"]*"' | head -1 | sed 's/.*"browser_download_url": *"//;s/"$//')
+    if [ -n "${URL}" ]; then break; fi
+    echo "   ⚠️ 第 $i 次上传失败，重试..."
+    sleep 3
+  done
   if [ -n "${URL}" ]; then
     echo "✅ 上传成功: ${ASSET_NAME}"
     echo "🔗 ${URL}"
