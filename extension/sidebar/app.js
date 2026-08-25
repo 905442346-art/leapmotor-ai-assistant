@@ -3490,7 +3490,6 @@ function newChat() {
       <div class="brand-tag">LEAPMOTOR</div>
       <h2>零跑AI助手</h2>
       <p>智能分析当前页面 · 随时随地获取洞察</p>
-      <div id="quickAccessGrid" class="quick-access-grid"></div>
       <div id="todoCard" class="todo-card hidden">
         <div class="todo-card-header">
           <div class="todo-card-title">
@@ -3530,8 +3529,6 @@ function newChat() {
   }
   // 首页自动拉取待办（已配置接口和工号时显示）
   fetchTodoItems();
-  // 渲染应用快捷入口
-  renderQuickAccessGrid();
 }
 
 // ========== 对话历史 ==========
@@ -4793,8 +4790,7 @@ function init() {
   initGlobalKeyboardListener();  // 初始化全局键盘监听
   initSettingsTabs();  // 初始化设置面板Tab切换
   initOAProcessFeature();  // 初始化OA流程查询功能
-  initQuickAccessManager();  // 初始化应用快捷入口管理
-  renderQuickAccessGrid();  // 渲染首页快捷入口
+  initQuickAccessPanel();  // 初始化应用快捷入口弹出面板
   try {
     initAutoUpdateSystem();  // 初始化在线自动更新系统（失败不影响其他功能初始化）
   } catch (e) {
@@ -6540,17 +6536,32 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.8.0</span>
+          <span class="changelog-version-number">v1.8.1</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 快捷入口弹出面板重构</h5>
+          <ul>
+            <li><strong>弹出面板交互</strong> - 从首页网格改为header按钮触发，点击弹出浮层面板，点击外部自动关闭</li>
+            <li><strong>Chrome书签导入</strong> - 面板内点击书签图标，浏览Chrome书签并一键添加到快捷入口</li>
+            <li><strong>面板内管理</strong> - 底部「管理」按钮进入删除模式，直接在网格中删除不需要的应用</li>
+            <li><strong>面板内添加</strong> - 点击+按钮展开添加表单，支持自定义名称、URL和Emoji图标</li>
+            <li><strong>智能图标匹配</strong> - 导入书签时根据域名自动匹配Emoji图标</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.8.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 应用快捷入口</h5>
           <ul>
-            <li><strong>首页快捷入口网格</strong> - 欢迎页新增应用快捷图标网格，点击即可在新标签页打开常用系统</li>
-            <li><strong>预置8个企业常用入口</strong> - OA系统、AI平台、项目管理、知识库、企业邮箱、GitHub、模型广场、流程查询</li>
-            <li><strong>自定义管理</strong> - 在「基础配置」Tab中添加/删除/排序快捷入口，支持自定义名称、URL和Emoji图标</li>
-            <li><strong>液态玻璃卡片风格</strong> - 品牌绿点缀、悬停浮起动效，与整体设计语言统一</li>
+            <li><strong>快捷入口网格</strong> - 预置8个企业常用入口，点击在新标签页打开</li>
+            <li><strong>自定义管理</strong> - 支持添加/删除/排序快捷入口，自定义名称、URL和Emoji图标</li>
           </ul>
         </div>
       </div>
@@ -6565,8 +6576,6 @@ function showChangelogModal() {
           <ul>
             <li><strong>对话历史管理</strong> - 自动保存对话、搜索、恢复继续聊、管理历史会话</li>
             <li><strong>我的待办聚合</strong> - 首页展示OA待办卡片，支持配置接口自动拉取</li>
-            <li><strong>修复background代理响应回传缺陷</strong></li>
-            <li><strong>更新系统容错处理</strong></li>
           </ul>
         </div>
       </div>
@@ -6927,7 +6936,7 @@ function closeChangelogModal() {
   if (modal) modal.classList.add('hidden');
 }
 
-// ========== 应用快捷入口 ==========
+// ========== 应用快捷入口（弹出面板） ==========
 
 const QA_STORAGE_KEY = 'leap_quick_access';
 const QA_DEFAULTS = [
@@ -6940,6 +6949,8 @@ const QA_DEFAULTS = [
   { name: '模型广场', url: 'https://ai.leapmotor.com/settings/model-square', icon: '🧩' },
   { name: '流程查询', url: 'https://lppms.leapmotor.com', icon: '🔄' }
 ];
+
+let qaManageMode = false;
 
 function loadQuickAccess() {
   try {
@@ -6957,127 +6968,237 @@ function saveQuickAccess(list) {
 }
 
 function renderQuickAccessGrid() {
-  const grid = document.getElementById('quickAccessGrid');
+  const grid = document.getElementById('qaPanelGrid');
   if (!grid) return;
   const list = loadQuickAccess();
-  if (list.length === 0) {
-    grid.innerHTML = '';
-    return;
-  }
-  grid.innerHTML = list.map((item, idx) => {
-    const icon = item.icon || '🔗';
-    return `
-      <div class="qa-item" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.name)}\n${escapeHtml(item.url)}">
-        <div class="qa-item-icon">${icon}</div>
-        <div class="qa-item-name">${escapeHtml(item.name)}</div>
-      </div>
-    `;
-  }).join('');
-  grid.querySelectorAll('.qa-item').forEach(el => {
-    el.addEventListener('click', () => {
+  grid.innerHTML = list.map((item, idx) => `
+    <div class="qa-grid-item ${qaManageMode ? 'manage-mode' : ''}" data-idx="${idx}" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.name)}\n${escapeHtml(item.url)}">
+      <div class="qa-grid-item-icon">${item.icon || '🔗'}</div>
+      <div class="qa-grid-item-name">${escapeHtml(item.name)}</div>
+      ${qaManageMode ? `<button class="qa-grid-item-delete" data-idx="${idx}" title="删除">×</button>` : ''}
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.qa-grid-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (qaManageMode) return;
+      if (e.target.classList.contains('qa-grid-item-delete')) return;
       const url = el.dataset.url;
       if (url) window.open(url, '_blank', 'noopener,noreferrer');
     });
   });
-}
 
-function renderQuickAccessManager() {
-  const listEl = document.getElementById('quickAccessList');
-  if (!listEl) return;
-  const list = loadQuickAccess();
-  if (list.length === 0) {
-    listEl.innerHTML = '';
-    return;
-  }
-  listEl.innerHTML = list.map((item, idx) => `
-    <div class="qa-mgr-item" data-idx="${idx}">
-      <div class="qa-mgr-icon">${item.icon || '🔗'}</div>
-      <div class="qa-mgr-info">
-        <div class="qa-mgr-name">${escapeHtml(item.name)}</div>
-        <div class="qa-mgr-url">${escapeHtml(item.url)}</div>
-      </div>
-      <div class="qa-mgr-actions">
-        <button class="qa-mgr-btn qa-up" title="上移" data-idx="${idx}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-        </button>
-        <button class="qa-mgr-btn qa-down" title="下移" data-idx="${idx}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <button class="qa-mgr-btn qa-delete" title="删除" data-idx="${idx}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        </button>
-      </div>
-    </div>
-  `).join('');
-
-  listEl.querySelectorAll('.qa-delete').forEach(btn => {
-    btn.addEventListener('click', () => {
+  grid.querySelectorAll('.qa-grid-item-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const idx = parseInt(btn.dataset.idx);
       const list = loadQuickAccess();
       list.splice(idx, 1);
       saveQuickAccess(list);
-      renderQuickAccessManager();
-      renderQuickAccessGrid();
-    });
-  });
-
-  listEl.querySelectorAll('.qa-up').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.idx);
-      if (idx === 0) return;
-      const list = loadQuickAccess();
-      [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
-      saveQuickAccess(list);
-      renderQuickAccessManager();
-      renderQuickAccessGrid();
-    });
-  });
-
-  listEl.querySelectorAll('.qa-down').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.idx);
-      const list = loadQuickAccess();
-      if (idx >= list.length - 1) return;
-      [list[idx + 1], list[idx]] = [list[idx], list[idx + 1]];
-      saveQuickAccess(list);
-      renderQuickAccessManager();
       renderQuickAccessGrid();
     });
   });
 }
 
-function initQuickAccessManager() {
-  renderQuickAccessManager();
+function toggleQuickAccessPanel() {
+  const panel = document.getElementById('quickAccessPanel');
+  if (!panel) return;
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    renderQuickAccessGrid();
+  }
+}
 
-  const addBtn = document.getElementById('qaAddBtn');
+function closeQuickAccessPanel() {
+  const panel = document.getElementById('quickAccessPanel');
+  if (panel) panel.classList.add('hidden');
+}
+
+function toggleQaAddForm() {
+  const form = document.getElementById('qaAddForm');
+  const bookmarkList = document.getElementById('qaBookmarkList');
+  const addBtn = document.getElementById('qaAddToggleBtn');
+  const importBtn = document.getElementById('qaImportBookmarksBtn');
+  if (!form) return;
+  form.classList.toggle('hidden');
+  bookmarkList.classList.add('hidden');
+  importBtn.classList.remove('active');
+  if (form.classList.contains('hidden')) {
+    addBtn.classList.remove('active');
+  } else {
+    addBtn.classList.add('active');
+    document.getElementById('qaName')?.focus();
+  }
+}
+
+function toggleQaManageMode() {
+  qaManageMode = !qaManageMode;
+  const btn = document.getElementById('qaManageToggleBtn');
+  const hint = document.querySelector('.qa-footer-hint');
+  if (qaManageMode) {
+    btn.textContent = '完成';
+    btn.classList.add('active');
+    if (hint) hint.textContent = '点击 × 删除应用';
+  } else {
+    btn.textContent = '管理';
+    btn.classList.remove('active');
+    if (hint) hint.textContent = '点击应用直接打开';
+  }
+  renderQuickAccessGrid();
+}
+
+function handleQaAdd() {
   const nameInput = document.getElementById('qaName');
   const urlInput = document.getElementById('qaUrl');
   const iconInput = document.getElementById('qaIcon');
+  if (!nameInput || !urlInput) return;
+  const name = nameInput.value.trim();
+  const url = urlInput.value.trim();
+  const icon = iconInput?.value.trim();
+  if (!name || !url) return;
+  let normalizedUrl = url;
+  if (!/^https?:\/\//.test(normalizedUrl)) {
+    normalizedUrl = 'https://' + normalizedUrl;
+  }
+  const list = loadQuickAccess();
+  list.push({ name, url: normalizedUrl, icon: icon || '🔗' });
+  saveQuickAccess(list);
+  nameInput.value = '';
+  urlInput.value = '';
+  if (iconInput) iconInput.value = '';
+  renderQuickAccessGrid();
+  nameInput.focus();
+}
 
-  if (!addBtn) return;
+function loadBookmarks() {
+  const container = document.getElementById('qaBookmarkList');
+  if (!container) return;
+  container.classList.remove('hidden');
+  container.innerHTML = '<div class="qa-bookmark-loading">正在加载书签...</div>';
 
-  function handleAdd() {
-    const name = nameInput.value.trim();
-    const url = urlInput.value.trim();
-    const icon = iconInput.value.trim();
-    if (!name || !url) return;
-    let normalizedUrl = url;
-    if (!/^https?:\/\//.test(normalizedUrl)) {
-      normalizedUrl = 'https://' + normalizedUrl;
-    }
-    const list = loadQuickAccess();
-    list.push({ name, url: normalizedUrl, icon: icon || '🔗' });
-    saveQuickAccess(list);
-    nameInput.value = '';
-    urlInput.value = '';
-    iconInput.value = '';
-    renderQuickAccessManager();
-    renderQuickAccessGrid();
+  if (!chrome.bookmarks) {
+    container.innerHTML = '<div class="qa-bookmark-loading">无法访问书签，请检查权限</div>';
+    return;
   }
 
-  addBtn.addEventListener('click', handleAdd);
-  urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleAdd(); });
-  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleAdd(); });
+  chrome.bookmarks.getTree((tree) => {
+    const bookmarks = [];
+    function traverse(nodes) {
+      for (const node of nodes) {
+        if (node.url) {
+          bookmarks.push({ title: node.title || node.url, url: node.url });
+        }
+        if (node.children) traverse(node.children);
+      }
+    }
+    traverse(tree);
+
+    if (bookmarks.length === 0) {
+      container.innerHTML = '<div class="qa-bookmark-loading">未找到书签</div>';
+      return;
+    }
+
+    const existing = loadQuickAccess();
+    const existingUrls = new Set(existing.map(a => a.url));
+
+    container.innerHTML = bookmarks.slice(0, 100).map(b => {
+      const added = existingUrls.has(b.url);
+      let favicon = '';
+      try {
+        const u = new URL(b.url);
+        favicon = `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=32`;
+      } catch (e) { /* skip */ }
+      return `
+        <div class="qa-bookmark-item" data-title="${escapeHtml(b.title)}" data-url="${escapeHtml(b.url)}">
+          <img class="qa-bookmark-icon" src="${escapeHtml(favicon)}" onerror="this.style.display='none'" />
+          <span class="qa-bookmark-title">${escapeHtml(b.title)}</span>
+          <svg class="qa-bookmark-add-btn" viewBox="0 0 24 24" fill="none" stroke="${added ? '#ccc' : 'var(--accent)'}" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.qa-bookmark-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const url = el.dataset.url;
+        const title = el.dataset.title;
+        const existingUrls = new Set(loadQuickAccess().map(a => a.url));
+        if (existingUrls.has(url)) return;
+        let icon = '🔖';
+        try {
+          const hostname = new URL(url).hostname;
+          if (hostname.includes('github')) icon = '🐱';
+          else if (hostname.includes('mail')) icon = '📧';
+          else if (hostname.includes('oa') || hostname.includes('lppms')) icon = '📋';
+          else if (hostname.includes('ai.')) icon = '🤖';
+          else if (hostname.includes('wiki') || hostname.includes('knowledge')) icon = '📚';
+          else if (hostname.includes('docs') || hostname.includes('doc')) icon = '📄';
+          else if (hostname.includes('gitlab')) icon = '🦊';
+          else if (hostname.includes('jira') || hostname.includes('confluence')) icon = '🔧';
+          else if (hostname.includes('figma')) icon = '🎨';
+          else if (hostname.includes('notion')) icon = '📝';
+        } catch (e) { /* skip */ }
+        const list = loadQuickAccess();
+        list.push({ name: title, url, icon });
+        saveQuickAccess(list);
+        renderQuickAccessGrid();
+        const addIcon = el.querySelector('.qa-bookmark-add-btn');
+        if (addIcon) addIcon.style.stroke = '#ccc';
+      });
+    });
+  });
+}
+
+function toggleQaBookmarks() {
+  const bookmarkList = document.getElementById('qaBookmarkList');
+  const addForm = document.getElementById('qaAddForm');
+  const importBtn = document.getElementById('qaImportBookmarksBtn');
+  const addBtn = document.getElementById('qaAddToggleBtn');
+  if (!bookmarkList) return;
+
+  if (bookmarkList.classList.contains('hidden')) {
+    bookmarkList.classList.remove('hidden');
+    addForm.classList.add('hidden');
+    importBtn.classList.add('active');
+    addBtn.classList.remove('active');
+    loadBookmarks();
+  } else {
+    bookmarkList.classList.add('hidden');
+    importBtn.classList.remove('active');
+  }
+}
+
+function initQuickAccessPanel() {
+  const btn = document.getElementById('quickAccessBtn');
+  const panel = document.getElementById('quickAccessPanel');
+  if (!btn || !panel) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleQuickAccessPanel();
+  });
+
+  panel.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(e.target) && e.target !== btn) {
+      closeQuickAccessPanel();
+    }
+  });
+
+  document.getElementById('qaAddToggleBtn')?.addEventListener('click', toggleQaAddForm);
+  document.getElementById('qaImportBookmarksBtn')?.addEventListener('click', toggleQaBookmarks);
+  document.getElementById('qaAddConfirmBtn')?.addEventListener('click', handleQaAdd);
+  document.getElementById('qaManageToggleBtn')?.addEventListener('click', toggleQaManageMode);
+
+  const nameInput = document.getElementById('qaName');
+  const urlInput = document.getElementById('qaUrl');
+  nameInput?.addEventListener('keydown', e => { if (e.key === 'Enter') handleQaAdd(); });
+  urlInput?.addEventListener('keydown', e => { if (e.key === 'Enter') handleQaAdd(); });
 }
 
 document.addEventListener('DOMContentLoaded', init);

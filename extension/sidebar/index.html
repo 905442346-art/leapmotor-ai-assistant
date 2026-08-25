@@ -32,6 +32,14 @@
           </svg>
           <span id="headerUpdateDot" class="update-dot"></span>
         </button>
+        <button id="quickAccessBtn" class="icon-btn" title="快捷入口">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+        </button>
         <button id="historyBtn" class="icon-btn" title="对话历史">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
@@ -307,25 +315,6 @@
             <span class="field-hint">配置后首页自动展示"我的待办"。{employeeId} 会自动替换为上方工号</span>
           </div>
 
-          <!-- 应用快捷入口管理 -->
-          <div class="setting-group">
-            <label>应用快捷入口</label>
-            <span class="field-hint">在首页展示常用应用快捷图标，点击即可跳转</span>
-            <div id="quickAccessManager" class="quick-access-manager">
-              <div id="quickAccessList" class="qa-list"></div>
-              <div class="qa-add-form">
-                <div class="qa-form-row">
-                  <input type="text" id="qaName" placeholder="应用名称（如：OA系统）" class="qa-input"/>
-                  <input type="text" id="qaUrl" placeholder="https://..." class="qa-input"/>
-                </div>
-                <div class="qa-form-row">
-                  <input type="text" id="qaIcon" placeholder="Emoji图标（如：📋），留空自动生成" class="qa-input qa-icon-input"/>
-                  <button id="qaAddBtn" class="btn btn-primary btn-sm">添加</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div class="tab-footer-hint">
             ⚙️ 基础配置会自动保存，更新插件后不会丢失
           </div>
@@ -484,9 +473,6 @@
         <h2>零跑AI助手</h2>
         <p>智能分析当前页面 · 随时随地获取洞察</p>
 
-        <!-- 应用快捷入口 -->
-        <div id="quickAccessGrid" class="quick-access-grid"></div>
-
         <!-- AI智能推荐问题容器（首次打开时显示） -->
         <div id="smartSuggestionsContainer" class="smart-suggestions-container"></div>
 
@@ -583,6 +569,61 @@
         <div class="favorites-footer">
           <span class="favorites-hint">提示：发送消息后可长按气泡收藏该提示词</span>
         </div>
+      </div>
+    </div>
+
+    <!-- ========== 快捷入口弹出面板 ========== -->
+    <div id="quickAccessPanel" class="qa-panel hidden">
+      <div class="qa-panel-arrow"></div>
+      <div class="qa-panel-header">
+        <span class="qa-panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+          快捷入口
+        </span>
+        <div class="qa-panel-actions">
+          <button id="qaImportBookmarksBtn" class="qa-panel-action-btn" title="导入Chrome书签">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+          <button id="qaAddToggleBtn" class="qa-panel-action-btn" title="添加应用">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 添加表单（折叠） -->
+      <div id="qaAddForm" class="qa-panel-add-form hidden">
+        <div class="qa-form-row">
+          <input type="text" id="qaName" placeholder="应用名称" class="qa-input"/>
+          <input type="text" id="qaUrl" placeholder="https://..." class="qa-input"/>
+        </div>
+        <div class="qa-form-row">
+          <input type="text" id="qaIcon" placeholder="Emoji图标（留空自动）" class="qa-input qa-icon-input"/>
+          <button id="qaAddConfirmBtn" class="btn btn-primary btn-sm">添加</button>
+        </div>
+      </div>
+
+      <!-- 书签导入列表（折叠） -->
+      <div id="qaBookmarkList" class="qa-panel-bookmarks hidden">
+        <div class="qa-bookmark-loading">正在加载书签...</div>
+      </div>
+
+      <!-- 应用网格 -->
+      <div id="qaPanelGrid" class="qa-panel-grid"></div>
+
+      <!-- 管理模式操作栏 -->
+      <div id="qaPanelFooter" class="qa-panel-footer">
+        <button id="qaManageToggleBtn" class="qa-footer-btn">管理</button>
+        <span class="qa-footer-hint">点击应用直接打开</span>
       </div>
     </div>
 

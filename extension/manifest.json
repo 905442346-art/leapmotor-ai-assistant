@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "零跑AI助手",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "随时用快捷键唤起本地AI助手，分析当前页面内容，使用本地大模型",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "tabs",
-    "commands"
+    "commands",
+    "bookmarks"
   ],
   "host_permissions": [
     "<all_urls>",
