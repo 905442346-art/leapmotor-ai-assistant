@@ -6536,18 +6536,33 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.8.2</span>
+          <span class="changelog-version-number">v1.8.3</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ Header布局紧凑化</h5>
+          <ul>
+            <li><strong>Header按钮缩小</strong> - 图标按钮从36px缩至30px，SVG从20px缩至18px</li>
+            <li><strong>Header高度缩减</strong> - 从64px降至56px，padding从20px降至12px</li>
+            <li><strong>Logo缩小</strong> - 从40px缩至34px，标题字号从16px降至14px</li>
+            <li><strong>按钮间距优化</strong> - gap从4px降至2px，消除溢出</li>
+            <li><strong>标题溢出处理</strong> - 添加ellipsis截断，防止文字撑开布局</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.8.2</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 快捷入口面板优化</h5>
           <ul>
-            <li><strong>图片图标上传</strong> - 支持上传真实图片作为应用图标，替代Emoji，更精致</li>
-            <li><strong>精致默认图标</strong> - 未上传图片时使用SVG链接图标，统一设计语言</li>
-            <li><strong>面板紧凑化</strong> - 缩小面板尺寸(280px)，图标32px，文字9.5px，减少溢出</li>
-            <li><strong>书签导入图标优化</strong> - 导入书签时自动获取网站favicon作为图标</li>
-            <li><strong>图片压缩</strong> - 上传图片自动压缩至48x48，控制存储大小</li>
+            <li><strong>图片图标上传</strong> - 支持上传真实图片，替代Emoji</li>
+            <li><strong>精致默认图标</strong> - 未上传时使用SVG链接图标</li>
+            <li><strong>面板紧凑化</strong> - 缩小至280px宽</li>
           </ul>
         </div>
       </div>

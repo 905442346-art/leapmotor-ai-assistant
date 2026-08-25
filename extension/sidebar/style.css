@@ -164,8 +164,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  height: 64px;
+  padding: 0 12px;
+  height: 56px;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
@@ -187,14 +187,15 @@ body {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
 .logo {
-  width: 40px; height: 40px;
-  border-radius: 14px;
+  width: 34px; height: 34px;
+  border-radius: 11px;
   background: linear-gradient(135deg, var(--accent-glow), rgba(0,212,255,0.1));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -205,19 +206,23 @@ body {
   color: var(--lp-green-bright);
   box-shadow: var(--shadow-glow), var(--shadow-inset);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
 }
 
 .logo:hover { transform: scale(1.05); }
 
 .header h1 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header h1 .brand-sub {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   color: var(--text-tertiary);
   display: block;
@@ -229,18 +234,19 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
 
 /* 头部更新提示按钮（默认隐藏，有新版本时显示） */
 .header-update-btn {
   position: relative;
-  width: 36px; height: 36px;
+  width: 30px; height: 30px;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -259,10 +265,10 @@ body {
 
 .update-dot {
   position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 8px;
-  height: 8px;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
   background: #FF3B30;
   border-radius: 50%;
   border: 2px solid var(--bg-base);
@@ -283,10 +289,10 @@ body {
 }
 
 .icon-btn {
-  width: 36px; height: 36px;
+  width: 30px; height: 30px;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -4842,8 +4848,8 @@ body {
 
 .qa-panel {
   position: fixed;
-  top: 50px;
-  right: 10px;
+  top: 46px;
+  right: 8px;
   width: 280px;
   max-height: 380px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.95));
