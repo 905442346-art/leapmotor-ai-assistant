@@ -6595,17 +6595,30 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.10.0</span>
+          <span class="changelog-version-number">v1.10.1</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 摘要按钮优化</h5>
+          <ul>
+            <li><strong>位置调整</strong> - 一键页面摘要按钮从header移至输入框左侧（文件上传和书签之间）</li>
+            <li><strong>图标优化</strong> - 替换为直观的文档摘要图标（文档+内容行）</li>
+            <li><strong>品牌绿色</strong> - 按钮使用品牌绿色高亮，与其他输入框按钮区分</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.10.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 选中文本浮窗 + 一键页面摘要</h5>
           <ul>
-            <li><strong>选中文本浮窗按钮</strong> - 在网页选中文本时，光标旁自动弹出品牌绿AI小按钮，点击直接发送给侧边栏AI解释</li>
-            <li><strong>浮窗交互</strong> - 悬浮在选中文本上方，带毛玻璃质感，点击外部或滚动时自动隐藏</li>
-            <li><strong>一键页面摘要</strong> - header新增摘要按钮，点击自动抓取页面正文并生成结构化摘要（核心主题/关键要点/重要数据/行动建议）</li>
-            <li><strong>摘要Prompt</strong> - 预设4段式摘要模板，AI输出结构化结果，快速浏览长文档</li>
+            <li><strong>选中文本浮窗</strong> - 选中文字自动弹出AI小按钮</li>
+            <li><strong>一键页面摘要</strong> - 自动抓取页面正文生成结构化摘要</li>
           </ul>
         </div>
       </div>
