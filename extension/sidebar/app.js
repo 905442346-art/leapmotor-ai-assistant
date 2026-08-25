@@ -4835,7 +4835,6 @@ function startCountdown() {
 function checkElementChange() {
   monitorNextCheck = Date.now() + monitorInterval;
   appendMonitorLog('正在检查元素...', 'loading');
-  // 发消息给 content.js 检查元素
   window.parent.postMessage({ type: 'CHECK_MONITORED_ELEMENT', selector: monitorSelector }, '*');
   const handler = (event) => {
     if (event.data.type === 'MONITORED_ELEMENT_RESULT') {
@@ -4846,20 +4845,31 @@ function checkElementChange() {
         notifyElementChange('监控的元素已不在页面中');
         return;
       }
-      const newText = result.text;
+      // 三层快照
+      var current = {
+        text: result.text || '',
+        html: result.html || '',
+        outer: result.outer || '',
+        styles: result.styles || ''
+      };
       if (monitorLastContent === null) {
-        monitorLastContent = newText;
-        appendMonitorLog('已记录初始内容: ' + newText.slice(0, 60), 'info');
-      } else if (newText !== monitorLastContent) {
-        const oldShort = monitorLastContent.slice(0, 80);
-        const newShort = newText.slice(0, 80);
-        const diff = '旧: ' + oldShort + ' → 新: ' + newShort;
-        appendMonitorLog('检测到变化！', 'alert');
-        appendMonitorLog(diff, 'alert');
-        monitorLastContent = newText;
-        notifyElementChange(diff);
+        monitorLastContent = current;
+        appendMonitorLog('已记录初始快照', 'info');
       } else {
-        appendMonitorLog('无变化', 'muted');
+        var changes = [];
+        if (current.text !== monitorLastContent.text) changes.push('文本变化');
+        if (current.html !== monitorLastContent.html) changes.push('结构变化');
+        if (current.outer !== monitorLastContent.outer) changes.push('属性变化');
+        if (current.styles !== monitorLastContent.styles) changes.push('视觉变化');
+        if (changes.length > 0) {
+          var diff = changes.join(' + ') + ' | ' + (current.text || '').slice(0, 60);
+          appendMonitorLog('检测到变化！' + changes.join('、'), 'alert');
+          appendMonitorLog(diff, 'alert');
+          monitorLastContent = current;
+          notifyElementChange(diff);
+        } else {
+          appendMonitorLog('无变化', 'muted');
+        }
       }
     }
   };

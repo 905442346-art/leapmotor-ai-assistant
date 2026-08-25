@@ -1561,7 +1561,40 @@ function checkMonitoredElement(selector) {
   try {
     const el = document.querySelector(selector);
     if (!el) return { found: false, text: '' };
-    return { found: true, text: (el.textContent || '').trim(), html: el.innerHTML.slice(0, 500) };
+
+    // 第1层：结构变化 — innerHTML
+    var html = el.innerHTML;
+
+    // 第3层：属性变化 — outerHTML（截取前2000字符防止过长）
+    var outer = el.outerHTML.slice(0, 2000);
+
+    // 第2层：视觉变化 — 子元素计算样式快照
+    var styleProps = ['transform', 'opacity', 'display', 'visibility', 'background-image'];
+    var children = el.children;
+    var styleSnapshot = [];
+    for (var i = 0; i < children.length && i < 30; i++) {
+      var cs = window.getComputedStyle(children[i]);
+      var snap = {};
+      for (var j = 0; j < styleProps.length; j++) {
+        snap[styleProps[j]] = cs.getPropertyValue(styleProps[j]);
+      }
+      styleSnapshot.push(children[i].tagName + '|' + JSON.stringify(snap));
+    }
+    // 也包括元素自身的计算样式
+    var selfCs = window.getComputedStyle(el);
+    var selfSnap = {};
+    for (var k = 0; k < styleProps.length; k++) {
+      selfSnap[styleProps[k]] = selfCs.getPropertyValue(styleProps[k]);
+    }
+    styleSnapshot.unshift('SELF|' + JSON.stringify(selfSnap));
+
+    return {
+      found: true,
+      text: (el.textContent || '').trim().slice(0, 200),
+      html: html,
+      outer: outer,
+      styles: styleSnapshot.join('||')
+    };
   } catch (err) {
     return { found: false, text: '', error: err.message };
   }
