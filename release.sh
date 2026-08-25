@@ -215,6 +215,15 @@ upload_asset "${DIST_DIR}/零跑AI助手-更新.command" "leapmotor-ai-assistant
 # Windows 更新脚本
 upload_asset "${DIST_DIR}/零跑AI助手-更新.bat" "leapmotor-ai-assistant-update.bat" "application/octet-stream"
 
+# 7. 上传固定名 latest.zip（内容与本次版本 zip 相同）
+# 作用: https://github.com/<repo>/releases/latest/download/leapmotor-ai-assistant-latest.zip
+# 是一个永远不变的最新版直链，README / 群公告可直接引用，无需跟随版本号更新
+echo ""
+echo "📎 上传固定名 latest.zip（最新版永久直链）..."
+cp -f "${ZIP_PATH}" "${DIST_DIR}/leapmotor-ai-assistant-latest.zip"
+upload_asset "${DIST_DIR}/leapmotor-ai-assistant-latest.zip" "leapmotor-ai-assistant-latest.zip" "application/zip"
+echo "   📌 永久下载链接: https://github.com/${REPO_SLUG}/releases/latest/download/leapmotor-ai-assistant-latest.zip"
+
 echo ""
 echo "=========================================="
 echo "  ✅ 发布流程结束"

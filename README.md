@@ -2,6 +2,38 @@
 
 一个类似Gemini的Chrome浏览器扩展，随时用快捷键唤起，可以查看和分析当前页面内容，使用本地大模型（Ollama），完全离线保护隐私。
 
+## 📥 下载安装
+
+### 下载最新版本（推荐）
+
+直接点击下方链接下载最新版安装包（永久有效，始终指向最新版本）：
+
+**⬇️ [下载最新版 leapmotor-ai-assistant-latest.zip](https://github.com/905442346-art/leapmotor-ai-assistant/releases/latest/download/leapmotor-ai-assistant-latest.zip)**
+
+或前往最新版发布页面查看说明：
+**🔗 [最新版 Release 页面](https://github.com/905442346-art/leapmotor-ai-assistant/releases/latest)**
+
+### 下载历史版本
+
+所有历史版本（v1.0.0 至今）均可在此下载：
+
+**🔗 [全部版本下载列表](https://github.com/905442346-art/leapmotor-ai-assistant/releases)**
+
+每个版本页面均包含：
+- `leapmotor-ai-assistant-vX.X.X.zip` — 完整安装包（首次安装）
+- `leapmotor-ai-assistant-update.command` — macOS 一键更新脚本
+- `leapmotor-ai-assistant-update.bat` — Windows 一键更新脚本
+
+### 安装步骤
+
+1. 下载并解压 zip 安装包
+2. 打开Chrome浏览器，访问 `chrome://extensions/`
+3. 开启右上角的「开发者模式」
+4. 点击「加载已解压的扩展程序」，选择解压出的 `extension` 文件夹
+5. 安装完成，按 `Cmd+M` (Mac) / `Ctrl+M` (Windows) 唤起使用
+
+> 💡 已安装旧版本的用户：在扩展设置中开启「热更新」后，检测到新版本可一键自动更新；或下载对应平台的一键更新脚本运行。
+
 ## ✨ 功能特性
 
 - ⌨️ **快捷键唤起** - `Cmd+J` (Mac) / `Ctrl+J` (Windows) 随时打开/关闭
