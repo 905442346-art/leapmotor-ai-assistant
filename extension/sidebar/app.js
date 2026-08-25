@@ -4748,15 +4748,18 @@ window.addEventListener('message', (event) => {
 });
 
 // ========== 输入框 Placeholder 轮换 ==========
-const PLACEHOLDER_HINTS = [
-  '输入你的问题...',
-  '试试问我「走哪个流程」',
-  '帮我分析这个页面',
-  '试试问我「电脑坏了找谁」',
-  '输入问题，按 Enter 发送',
-  '试试问我「怎么报销」',
-  '支持快捷键 Ctrl+M 唤起哦',
-];
+function getPlaceholderHints() {
+  const toggleKey = shortcutToDisplay(customShortcuts['toggle-assistant']) || (isMac ? '⌘J' : 'Ctrl+M');
+  return [
+    '输入你的问题...',
+    '试试问我「走哪个流程」',
+    '帮我分析这个页面',
+    '试试问我「电脑坏了找谁」',
+    '输入问题，按 Enter 发送',
+    '试试问我「怎么报销」',
+    `支持快捷键 ${toggleKey} 唤起哦`,
+  ];
+}
 
 let placeholderTimer = null;
 
@@ -4766,7 +4769,7 @@ function startPlaceholderRotation(input) {
   // 用户开始输入时停止轮换
   input.addEventListener('focus', () => {
     if (placeholderTimer) { clearInterval(placeholderTimer); placeholderTimer = null; }
-    if (!input.value) input.placeholder = PLACEHOLDER_HINTS[0];
+    if (!input.value) input.placeholder = getPlaceholderHints()[0];
   });
   // 失焦且无内容时恢复轮换
   input.addEventListener('blur', () => {
@@ -4776,11 +4779,12 @@ function startPlaceholderRotation(input) {
     if (placeholderTimer) clearInterval(placeholderTimer);
     placeholderTimer = setInterval(() => {
       if (document.activeElement === input || input.value) return;
-      idx = (idx + 1) % PLACEHOLDER_HINTS.length;
+      const hints = getPlaceholderHints();
+      idx = (idx + 1) % hints.length;
       input.style.transition = 'opacity 0.2s';
       input.style.opacity = '0.5';
       setTimeout(() => {
-        input.placeholder = PLACEHOLDER_HINTS[idx];
+        input.placeholder = hints[idx];
         input.style.opacity = '1';
       }, 200);
     }, 3500);
@@ -6552,17 +6556,30 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.9.0</span>
+          <span class="changelog-version-number">v1.9.1</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ Placeholder 快捷键修正</h5>
+          <ul>
+            <li><strong>快捷键提示动态化</strong> - 输入框 placeholder 中的快捷键提示从硬编码 Ctrl+M 改为动态读取用户实际配置</li>
+            <li><strong>平台自适应</strong> - Mac 显示 ⌘J，Windows 显示 Ctrl+M，与底部快捷键提示和实际配置一致</li>
+            <li><strong>自定义快捷键同步</strong> - 用户修改快捷键后，placeholder 提示自动更新</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.9.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 右键菜单AI操作</h5>
           <ul>
-            <li><strong>选中文本右键AI</strong> - 在任意网页选中文本后右键，可选择「AI解释」「AI翻译」「AI总结」「AI追问」</li>
-            <li><strong>自动打开侧边栏</strong> - 如果侧边栏未打开，右键操作会自动唤起并执行</li>
-            <li><strong>智能Prompt</strong> - 根据操作类型自动构建提示词，翻译支持中英互译</li>
-            <li><strong>无需复制粘贴</strong> - 选中文本直接发送给AI，工作流更流畅</li>
+            <li><strong>选中文本右键AI</strong> - AI解释/翻译/总结/追问</li>
+            <li><strong>自动打开侧边栏</strong> - 右键操作自动唤起</li>
           </ul>
         </div>
       </div>
