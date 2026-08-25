@@ -5350,3 +5350,53 @@ body {
   padding: 16px 0;
 }
 .monitor-panel.hidden { display: none !important; }
+
+/* ========== 更多功能下拉菜单 ========== */
+.more-actions-wrapper { position: relative; display: flex; }
+.more-actions-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  background: var(--bg-elevated, rgba(255,255,255,0.95));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(var(--glass-blur));
+  padding: 4px;
+  min-width: 140px;
+  z-index: 200;
+}
+.more-actions-menu.hidden { display: none !important; }
+.more-action-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.more-action-item:hover { background: var(--accent-dim); }
+.more-action-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.more-action-item.disabled:hover { background: transparent; }
+
+/* ========== 监控面板选中元素信息 ========== */
+.monitor-picked-info {
+  padding: 8px 10px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  word-break: break-all;
+}

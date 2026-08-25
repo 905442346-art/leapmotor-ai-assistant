@@ -658,12 +658,6 @@ function renderPageList() {
     `;
   });
   list.innerHTML = html;
-
-  // 多页面时显示对比按钮，单页面时显示监控按钮
-  const compareBtn = document.getElementById('compareBtn');
-  const monitorBtn = document.getElementById('monitorBtn');
-  if (compareBtn) compareBtn.style.display = capturedPages.length >= 2 ? 'flex' : 'none';
-  if (monitorBtn) monitorBtn.style.display = capturedPages.length >= 1 ? "flex" : "none";
 }
 
 function getActivePageContent() {
@@ -4755,13 +4749,33 @@ window.addEventListener('message', (event) => {
 
 // ========== 输入框 Placeholder 轮换 ==========
 
-// ========== 页面变化监控 ==========
+// ========== 页面变化监控（元素选择器模式）==========
 let monitorTimer = null;
 let monitorLastContent = null;
-let monitorKeywords = '';
+let monitorSelector = null;
 let monitorInterval = 60000;
 let monitorCountdownTimer = null;
 let monitorNextCheck = 0;
+let pickedElement = null;
+
+// 监听元素选择器回调
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'ELEMENT_PICKED' && event.data.element) {
+    pickedElement = event.data.element;
+    monitorSelector = event.data.element.selector;
+    // 打开监控面板
+    const panel = document.getElementById('monitorPanel');
+    if (panel) panel.classList.remove('hidden');
+    // 更新面板显示选中的元素信息
+    const statusText = document.getElementById('monitorStatusText');
+    if (statusText) statusText.textContent = '已选中元素: <' + pickedElement.tag + '>';
+    const elInfo = document.getElementById('monitorKeywords');
+    if (elInfo) {
+      elInfo.value = '';
+      elInfo.placeholder = '已选中: ' + (pickedElement.text || '').slice(0, 50);
+    }
+  }
+});
 
 function toggleMonitorPanel() {
   const panel = document.getElementById('monitorPanel');
@@ -4769,34 +4783,40 @@ function toggleMonitorPanel() {
 }
 
 function startMonitoring() {
+  if (!monitorSelector) {
+    appendMonitorLog('请先点击页面选择要监控的元素', 'warn');
+    return;
+  }
   const intervalSelect = document.getElementById('monitorInterval');
-  const keywordsInput = document.getElementById('monitorKeywords');
-  if (!intervalSelect || !keywordsInput) return;
-  monitorInterval = parseInt(intervalSelect.value);
-  monitorKeywords = keywordsInput.value.trim();
+  if (intervalSelect) monitorInterval = parseInt(intervalSelect.value);
   monitorLastContent = null;
-  document.getElementById('monitorStartBtn').classList.add('hidden');
-  document.getElementById('monitorStopBtn').classList.remove('hidden');
-  document.getElementById('monitorStatusText').textContent = '监控中...';
-  document.getElementById('monitorInterval').disabled = true;
-  document.getElementById('monitorKeywords').disabled = true;
-  appendMonitorLog('开始监控当前页面', 'info');
-  if (monitorKeywords) appendMonitorLog('关键词：' + monitorKeywords, 'info');
-  appendMonitorLog('间隔：' + (monitorInterval / 1000) + '秒', 'info');
-  checkPageChange();
-  monitorTimer = setInterval(checkPageChange, monitorInterval);
+  const startBtn = document.getElementById('monitorStartBtn');
+  const stopBtn = document.getElementById('monitorStopBtn');
+  if (startBtn) startBtn.classList.add('hidden');
+  if (stopBtn) stopBtn.classList.remove('hidden');
+  const statusText = document.getElementById('monitorStatusText');
+  if (statusText) statusText.textContent = '监控中...';
+  if (intervalSelect) intervalSelect.disabled = true;
+  appendMonitorLog('开始监控元素: ' + monitorSelector, 'info');
+  appendMonitorLog('间隔: ' + (monitorInterval / 1000) + '秒', 'info');
+  checkElementChange();
+  monitorTimer = setInterval(checkElementChange, monitorInterval);
   startCountdown();
 }
 
 function stopMonitoring() {
   if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
   if (monitorCountdownTimer) { clearInterval(monitorCountdownTimer); monitorCountdownTimer = null; }
-  document.getElementById('monitorStartBtn').classList.remove('hidden');
-  document.getElementById('monitorStopBtn').classList.add('hidden');
-  document.getElementById('monitorStatusText').textContent = '监控已停止';
-  document.getElementById('monitorCountdown').textContent = '';
-  document.getElementById('monitorInterval').disabled = false;
-  document.getElementById('monitorKeywords').disabled = false;
+  const startBtn = document.getElementById('monitorStartBtn');
+  const stopBtn = document.getElementById('monitorStopBtn');
+  if (startBtn) startBtn.classList.remove('hidden');
+  if (stopBtn) stopBtn.classList.add('hidden');
+  const statusText = document.getElementById('monitorStatusText');
+  if (statusText) statusText.textContent = '监控已停止';
+  const countdown = document.getElementById('monitorCountdown');
+  if (countdown) countdown.textContent = '';
+  const intervalSelect = document.getElementById('monitorInterval');
+  if (intervalSelect) intervalSelect.disabled = false;
   appendMonitorLog('监控已停止', 'warn');
 }
 
@@ -4810,22 +4830,32 @@ function startCountdown() {
   }, 1000);
 }
 
-function checkPageChange() {
+function checkElementChange() {
   monitorNextCheck = Date.now() + monitorInterval;
-  appendMonitorLog('正在抓取页面内容...', 'loading');
-  window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
+  appendMonitorLog('正在检查元素...', 'loading');
+  // 发消息给 content.js 检查元素
+  window.parent.postMessage({ type: 'CHECK_MONITORED_ELEMENT', selector: monitorSelector }, '*');
   const handler = (event) => {
-    if (event.data.type === 'PAGE_CONTENT' && event.data.content) {
+    if (event.data.type === 'MONITORED_ELEMENT_RESULT') {
       window.removeEventListener('message', handler);
-      const newContent = extractMonitorText(event.data.content);
+      const result = event.data.result;
+      if (!result.found) {
+        appendMonitorLog('元素未找到（可能已消失）', 'alert');
+        notifyElementChange('监控的元素已不在页面中');
+        return;
+      }
+      const newText = result.text;
       if (monitorLastContent === null) {
-        monitorLastContent = newContent;
-        appendMonitorLog('已记录初始内容，等待变化...', 'info');
-      } else if (newContent !== monitorLastContent) {
-        const diff = findContentDiff(monitorLastContent, newContent);
-        appendMonitorLog('检测到变化！' + diff, 'alert');
-        monitorLastContent = newContent;
-        notifyPageChange(diff);
+        monitorLastContent = newText;
+        appendMonitorLog('已记录初始内容: ' + newText.slice(0, 60), 'info');
+      } else if (newText !== monitorLastContent) {
+        const oldShort = monitorLastContent.slice(0, 80);
+        const newShort = newText.slice(0, 80);
+        const diff = '旧: ' + oldShort + ' → 新: ' + newShort;
+        appendMonitorLog('检测到变化！', 'alert');
+        appendMonitorLog(diff, 'alert');
+        monitorLastContent = newText;
+        notifyElementChange(diff);
       } else {
         appendMonitorLog('无变化', 'muted');
       }
@@ -4835,41 +4865,17 @@ function checkPageChange() {
   setTimeout(() => window.removeEventListener('message', handler), 8000);
 }
 
-function extractMonitorText(content) {
-  if (!content) return '';
-  let text = content.text || '';
-  if (monitorKeywords) {
-    const kws = monitorKeywords.split(/[，,]/).map(k => k.trim()).filter(Boolean);
-    const lines = text.split('\n').filter(line => kws.some(kw => line.includes(kw)));
-    text = lines.join('\n');
-  }
-  return text;
-}
-
-function findContentDiff(oldText, newText) {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const changes = [];
-  const maxLines = Math.max(oldLines.length, newLines.length);
-  for (let i = 0; i < maxLines; i++) {
-    if (oldLines[i] !== newLines[i] && newLines[i]) {
-      changes.push('第' + (i + 1) + '行变化：' + newLines[i].trim().slice(0, 80));
-    }
-  }
-  return changes.length > 0 ? changes.slice(0, 5).join(' | ') : '内容已变化';
-}
-
-function notifyPageChange(diff) {
+function notifyElementChange(diff) {
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    new Notification('页面变化监控', { body: diff.slice(0, 100) });
+    new Notification('元素变化监控', { body: diff.slice(0, 100) });
   } else if (typeof Notification !== 'undefined' && Notification.permission !== 'denied') {
     Notification.requestPermission().then(perm => {
-      if (perm === 'granted') new Notification('页面变化监控', { body: diff.slice(0, 100) });
+      if (perm === 'granted') new Notification('元素变化监控', { body: diff.slice(0, 100) });
     });
   }
   const input = document.getElementById('messageInput');
   if (input) {
-    input.value = '页面变化监控检测到以下变化：\n\n' + diff + '\n\n请分析这些变化的含义。';
+    input.value = '我监控的页面元素发生了变化：\n\n' + diff + '\n\n请分析这个变化的含义。';
     input.focus();
     sendMessage();
   }
@@ -4887,6 +4893,8 @@ function appendMonitorLog(text, type) {
   log.appendChild(entry);
   log.scrollTop = log.scrollHeight;
 }
+
+// ========== 输入框 Placeholder 轮换 ==========
 function getPlaceholderHints() {
   const toggleKey = shortcutToDisplay(customShortcuts['toggle-assistant']) || (isMac ? '⌘J' : 'Ctrl+M');
   return [
@@ -4995,11 +5003,35 @@ function init() {
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
   document.getElementById('newChatBtn').addEventListener('click', newChat);
 
-  // ===== 一键页面摘要 =====
+  // ===== 更多功能菜单 =====
+  const moreActionsBtn = document.getElementById('moreActionsBtn');
+  const moreActionsMenu = document.getElementById('moreActionsMenu');
+  if (moreActionsBtn) moreActionsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    moreActionsMenu.classList.toggle('hidden');
+    // 更新对比按钮可用状态
+    const compareBtn2 = document.getElementById('compareBtn');
+    const compareLabel = document.getElementById('compareLabel');
+    if (compareBtn2) {
+      if (capturedPages.length < 2) {
+        compareBtn2.classList.add('disabled');
+        if (compareLabel) compareLabel.textContent = '多页面对比（需先抓取2+页面）';
+      } else {
+        compareBtn2.classList.remove('disabled');
+        if (compareLabel) compareLabel.textContent = '多页面对比';
+      }
+    }
+  });
+  // 点击外部关闭菜单
+  document.addEventListener('click', () => {
+    if (moreActionsMenu) moreActionsMenu.classList.add('hidden');
+  });
+  if (moreActionsMenu) moreActionsMenu.addEventListener('click', (e) => e.stopPropagation());
+
+  // 页面摘要
   const summaryBtn = document.getElementById('summaryBtn');
   if (summaryBtn) summaryBtn.addEventListener('click', () => {
-    summaryBtn.style.transform = 'scale(0.9)';
-    setTimeout(() => summaryBtn.style.transform = '', 150);
+    moreActionsMenu.classList.add('hidden');
     const summaryPrompt = `请对以下页面内容进行结构化摘要，按以下格式输出：
 
 ## 核心主题
@@ -5034,12 +5066,23 @@ function init() {
     setTimeout(() => window.removeEventListener('message', handler), 5000);
   });
 
-  // ===== 多页面对比分析 =====
+  // 多页面对比分析
   const compareBtn = document.getElementById('compareBtn');
   if (compareBtn) compareBtn.addEventListener('click', () => {
-    if (capturedPages.length < 2) return;
-    compareBtn.style.transform = 'scale(0.9)';
-    setTimeout(() => compareBtn.style.transform = '', 150);
+    if (capturedPages.length < 2) {
+      // 提示用户先抓取页面
+      const compareLabel = document.getElementById('compareLabel');
+      if (compareLabel) {
+        compareLabel.style.color = '#FF453A';
+        compareLabel.textContent = '请先抓取2个以上页面！';
+        setTimeout(() => {
+          compareLabel.style.color = '';
+          compareLabel.textContent = '多页面对比（需先抓取2+页面）';
+        }, 2000);
+      }
+      return;
+    }
+    moreActionsMenu.classList.add('hidden');
     const comparePrompt = `请对比分析以下 ${capturedPages.length} 个页面的内容，按以下格式输出：
 
 ## 页面概览
@@ -5064,9 +5107,13 @@ function init() {
     }
   });
 
-  // ===== 页面变化监控 =====
+  // 元素监控 - 激活元素选择器
   const monitorBtn = document.getElementById('monitorBtn');
-  if (monitorBtn) monitorBtn.addEventListener('click', toggleMonitorPanel);
+  if (monitorBtn) monitorBtn.addEventListener('click', () => {
+    moreActionsMenu.classList.add('hidden');
+    // 发消息给 content.js 激活元素选择器
+    window.parent.postMessage({ type: 'ACTIVATE_ELEMENT_PICKER' }, '*');
+  });
 
   // 监控面板按钮事件
   const monitorStart = document.getElementById('monitorStartBtn');
@@ -6778,19 +6825,33 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.11.0</span>
+          <span class="changelog-version-number">v1.12.0</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 更多功能菜单 + 元素选择器监控</h5>
+          <ul>
+            <li><strong>更多功能按钮</strong> - 页面摘要/多页面对比/元素监控合并为三点按钮</li>
+            <li><strong>多页面对比智能判断</strong> - 未抓取2+页面时置灰+提示</li>
+            <li><strong>元素选择器监控</strong> - 像DevTools小手选取页面元素定时监控</li>
+            <li><strong>高亮预览</strong> - 悬浮时元素高亮+tooltip</li>
+            <li><strong>CSS选择器生成</strong> - 自动生成唯一路径定位</li>
+            <li><strong>变化通知</strong> - 浏览器通知+自动AI分析</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.11.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 多页面对比 + 页面变化监控</h5>
           <ul>
-            <li><strong>多页面对比分析</strong> - 抓取2个以上页面后输入框自动显示对比按钮，一键生成5段式对比Prompt</li>
-            <li><strong>页面变化监控</strong> - 定时抓取页面，检测到变化时自动通知+发送AI分析</li>
-            <li><strong>监控配置</strong> - 可设间隔(30秒~10分钟)、关键词过滤</li>
-            <li><strong>变化日志</strong> - 实时显示监控日志，带时间戳</li>
-            <li><strong>浏览器通知</strong> - 变化时发送系统通知</li>
-            <li><strong>智能diff</strong> - 逐行对比定位变化行号</li>
+            <li><strong>多页面对比分析</strong> - 5段式对比Prompt</li>
+            <li><strong>页面变化监控</strong> - 定时检测变化</li>
           </ul>
         </div>
       </div>

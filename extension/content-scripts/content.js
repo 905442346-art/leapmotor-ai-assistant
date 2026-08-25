@@ -313,6 +313,11 @@ if (window.__localAIAssistantInjected) {
     } else if (event.data.type === 'GET_PAGE_CONTENT') {
       const content = extractPageContent();
       sidebarIframe.contentWindow.postMessage({ type: 'PAGE_CONTENT', content }, '*');
+    } else if (event.data.type === 'ACTIVATE_ELEMENT_PICKER') {
+      activateElementPicker();
+    } else if (event.data.type === 'CHECK_MONITORED_ELEMENT') {
+      const result = checkMonitoredElement(event.data.selector);
+      sidebarIframe.contentWindow.postMessage({ type: 'MONITORED_ELEMENT_RESULT', result }, '*');
     } else if (event.data.type === 'GET_TAB_INFO') {
       try {
         chrome.runtime.sendMessage({ type: 'GET_TAB_INFO' }, (response) => {
@@ -1417,4 +1422,146 @@ function injectFloatingButtonStyles() {
   `;
 
   (document.head || document.documentElement).appendChild(style);
+}
+
+// ========== 元素选择器（小手模式）==========
+let pickerActive = false;
+let pickerOverlay = null;
+let pickerHighlight = null;
+let pickerTooltip = null;
+
+function activateElementPicker() {
+  if (pickerActive) { deactivateElementPicker(); return; }
+  pickerActive = true;
+
+  // 创建高亮覆盖层
+  pickerOverlay = document.createElement('div');
+  pickerOverlay.id = 'ai-element-picker-overlay';
+  pickerOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;cursor:crosshair;background:transparent;';
+  document.body.appendChild(pickerOverlay);
+
+  pickerHighlight = document.createElement('div');
+  pickerHighlight.id = 'ai-element-picker-highlight';
+  pickerHighlight.style.cssText = 'position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #1AB382;background:rgba(26,179,130,0.1);border-radius:4px;transition:all 0.05s ease;display:none;';
+  document.body.appendChild(pickerHighlight);
+
+  pickerTooltip = document.createElement('div');
+  pickerTooltip.id = 'ai-element-picker-tooltip';
+  pickerTooltip.style.cssText = 'position:fixed;z-index:2147483648;pointer-events:none;background:#1AB382;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-family:system-ui;max-width:400px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;';
+  document.body.appendChild(pickerTooltip);
+
+  pickerOverlay.addEventListener('mousemove', onPickerMouseMove);
+  pickerOverlay.addEventListener('click', onPickerClick);
+  pickerOverlay.addEventListener('contextmenu', (e) => { e.preventDefault(); deactivateElementPicker(); });
+
+  // 显示提示
+  showPickerBanner();
+}
+
+function showPickerBanner() {
+  const banner = document.createElement('div');
+  banner.id = 'ai-picker-banner';
+  banner.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483649;background:#1AB382;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;font-family:system-ui;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+  banner.textContent = '🔍 点击要监控的元素 · 右键取消';
+  document.body.appendChild(banner);
+}
+
+function deactivateElementPicker() {
+  pickerActive = false;
+  if (pickerOverlay) { pickerOverlay.remove(); pickerOverlay = null; }
+  if (pickerHighlight) { pickerHighlight.remove(); pickerHighlight = null; }
+  if (pickerTooltip) { pickerTooltip.remove(); pickerTooltip = null; }
+  const banner = document.getElementById('ai-picker-banner');
+  if (banner) banner.remove();
+}
+
+function onPickerMouseMove(e) {
+  // 临时隐藏 overlay 以获取真实元素
+  pickerOverlay.style.pointerEvents = 'none';
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  pickerOverlay.style.pointerEvents = 'auto';
+
+  if (!el || el === document.body || el === document.documentElement) {
+    pickerHighlight.style.display = 'none';
+    pickerTooltip.style.display = 'none';
+    return;
+  }
+
+  const rect = el.getBoundingClientRect();
+  pickerHighlight.style.display = 'block';
+  pickerHighlight.style.left = rect.left + 'px';
+  pickerHighlight.style.top = rect.top + 'px';
+  pickerHighlight.style.width = rect.width + 'px';
+  pickerHighlight.style.height = rect.height + 'px';
+
+  // 显示元素信息
+  const tag = el.tagName.toLowerCase();
+  const text = (el.textContent || '').trim().slice(0, 60);
+  pickerTooltip.style.display = 'block';
+  pickerTooltip.style.left = Math.min(e.clientX + 15, window.innerWidth - 300) + 'px';
+  pickerTooltip.style.top = Math.max(e.clientY - 30, 0) + 'px';
+  pickerTooltip.textContent = text ? `<${tag}> ${text}` : `<${tag}>`;
+}
+
+function onPickerClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  pickerOverlay.style.pointerEvents = 'none';
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  pickerOverlay.style.pointerEvents = 'auto';
+
+  if (!el || el === document.body) {
+    pickerHighlight.style.display = 'none';
+    return;
+  }
+
+  // 生成 CSS 选择器
+  const selector = generateSelector(el);
+  const text = (el.textContent || '').trim();
+  const tag = el.tagName.toLowerCase();
+
+  deactivateElementPicker();
+
+  // 发送给 sidebar
+  if (sidebarIframe) {
+    sidebarIframe.contentWindow.postMessage({
+      type: 'ELEMENT_PICKED',
+      element: { selector, text, tag, rect: el.getBoundingClientRect() }
+    }, '*');
+  }
+}
+
+function generateSelector(el) {
+  if (el.id) return '#' + el.id;
+  const parts = [];
+  let node = el;
+  while (node && node !== document.body) {
+    let part = node.tagName.toLowerCase();
+    if (node.className && typeof node.className === 'string') {
+      const classes = node.className.trim().split(/\s+/).filter(c => c && !c.startsWith('ai-')).slice(0, 3);
+      if (classes.length) part += '.' + classes.join('.');
+    }
+    const parent = node.parentElement;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter(s => s.tagName === node.tagName);
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(node) + 1;
+        part += `:nth-of-type(${index})`;
+      }
+    }
+    parts.unshift(part);
+    node = parent;
+  }
+  return parts.join(' > ');
+}
+
+function checkMonitoredElement(selector) {
+  try {
+    const el = document.querySelector(selector);
+    if (!el) return { found: false, text: '' };
+    return { found: true, text: (el.textContent || '').trim(), html: el.innerHTML.slice(0, 500) };
+  } catch (err) {
+    return { found: false, text: '', error: err.message };
+  }
 }
