@@ -5057,9 +5057,17 @@ function init() {
         updateCompareState();
         floatMenu.classList.toggle('hidden');
         if (!floatMenu.classList.contains('hidden')) {
-          // 菜单定位在按钮上方
+          // 菜单定位在按钮上方，靠右时向左展开
           const btnRect = floatBtn.getBoundingClientRect();
-          floatMenu.style.left = btnRect.left + 'px';
+          const menuWidth = 140;
+          const sidebarWidth = window.innerWidth;
+          if (btnRect.left + menuWidth > sidebarWidth) {
+            floatMenu.style.left = 'auto';
+            floatMenu.style.right = (sidebarWidth - btnRect.right) + 'px';
+          } else {
+            floatMenu.style.right = 'auto';
+            floatMenu.style.left = btnRect.left + 'px';
+          }
           floatMenu.style.bottom = (window.innerHeight - btnRect.top + 4) + 'px';
         }
       }
