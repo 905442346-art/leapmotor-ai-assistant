@@ -1568,29 +1568,46 @@ function checkMonitoredElement(selector) {
     // 第3层：属性变化 — outerHTML（截取前2000字符防止过长）
     var outer = el.outerHTML.slice(0, 2000);
 
-    // 第2层：视觉变化 — 子元素计算样式快照
+    // 第2层：视觉变化 — 所有后代元素计算样式快照
     var styleProps = ['transform', 'opacity', 'display', 'visibility', 'background-image'];
-    var children = el.children;
+    var allDescendants = el.querySelectorAll('*');
     var styleSnapshot = [];
-    for (var i = 0; i < children.length && i < 30; i++) {
-      var cs = window.getComputedStyle(children[i]);
-      var snap = {};
-      for (var j = 0; j < styleProps.length; j++) {
-        snap[styleProps[j]] = cs.getPropertyValue(styleProps[j]);
-      }
-      styleSnapshot.push(children[i].tagName + '|' + JSON.stringify(snap));
-    }
-    // 也包括元素自身的计算样式
+    // 元素自身
     var selfCs = window.getComputedStyle(el);
     var selfSnap = {};
     for (var k = 0; k < styleProps.length; k++) {
       selfSnap[styleProps[k]] = selfCs.getPropertyValue(styleProps[k]);
     }
-    styleSnapshot.unshift('SELF|' + JSON.stringify(selfSnap));
+    // 元素自身滚动位置
+    selfSnap['scrollLeft'] = el.scrollLeft;
+    selfSnap['scrollTop'] = el.scrollTop;
+    styleSnapshot.push('SELF|' + JSON.stringify(selfSnap));
+    // 所有后代（限制50个）
+    for (var i = 0; i < allDescendants.length && i < 50; i++) {
+      var child = allDescendants[i];
+      var cs = window.getComputedStyle(child);
+      var snap = {};
+      for (var j = 0; j < styleProps.length; j++) {
+        snap[styleProps[j]] = cs.getPropertyValue(styleProps[j]);
+      }
+      // img/video 的 src
+      if (child.tagName === 'IMG' || child.tagName === 'VIDEO') {
+        snap['src'] = child.src || '';
+      }
+      styleSnapshot.push(child.tagName + '|' + JSON.stringify(snap));
+    }
+
+    // 用 innerText 替代 textContent（只返回可见元素的文本）
+    var visibleText = '';
+    try {
+      visibleText = (el.innerText || el.textContent || '').trim();
+    } catch(e) {
+      visibleText = (el.textContent || '').trim();
+    }
 
     return {
       found: true,
-      text: (el.textContent || '').trim().slice(0, 200),
+      text: visibleText.slice(0, 300),
       html: html,
       outer: outer,
       styles: styleSnapshot.join('||')
