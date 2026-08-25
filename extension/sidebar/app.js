@@ -3273,6 +3273,7 @@ async function sendMessage() {
     }
 
     chatHistory.push({ role: 'assistant', content: aiText });
+    saveCurrentSession(); // 持久化对话历史
     setStatus('就绪');
 
     // 延迟重置引用
@@ -3401,6 +3402,7 @@ async function analyzePage() {
     updateLastMessage(result);
     chatHistory.push({ role: 'user', content: prompt });
     chatHistory.push({ role: 'assistant', content: result });
+    saveCurrentSession(); // 持久化对话历史
     setStatus('就绪');
   } catch (error) {
     removeTypingIndicator();
@@ -3480,6 +3482,7 @@ async function callAPIWithImage(prompt, imageBase64) {
 // ========== 新对话 ==========
 function newChat() {
   chatHistory = [];
+  currentSessionId = null; // 新会话：暂无ID，首条消息保存时生成
   const container = document.getElementById('chatContainer');
   container.innerHTML = `
     <div class="welcome-screen">
@@ -3487,6 +3490,25 @@ function newChat() {
       <div class="brand-tag">LEAPMOTOR</div>
       <h2>零跑AI助手</h2>
       <p>智能分析当前页面 · 随时随地获取洞察</p>
+      <div id="todoCard" class="todo-card hidden">
+        <div class="todo-card-header">
+          <div class="todo-card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 11l3 3L22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            <span>我的待办</span>
+            <span id="todoBadge" class="todo-badge"></span>
+          </div>
+          <button id="todoRefreshBtn" class="todo-refresh-btn" title="刷新待办">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+        </div>
+        <div id="todoCardBody" class="todo-card-body"></div>
+      </div>
       <div class="suggestion-chips">
         <button class="chip" data-prompt="请总结这个页面的主要内容">总结页面内容</button>
         <button class="chip" data-prompt="请提取页面中的关键数据和表格">提取关键数据</button>
@@ -3496,6 +3518,420 @@ function newChat() {
     </div>
   `;
   bindChips();
+  // 待办刷新按钮（欢迎页动态生成，需在此绑定）
+  const todoRefreshBtn = document.getElementById('todoRefreshBtn');
+  if (todoRefreshBtn) {
+    todoRefreshBtn.addEventListener('click', () => {
+      todoRefreshBtn.classList.add('spinning');
+      _todo_fetching = false;
+      fetchTodoItems();
+    });
+  }
+  // 首页自动拉取待办（已配置接口和工号时显示）
+  fetchTodoItems();
+}
+
+// ========== 对话历史 ==========
+const CHAT_SESSIONS_KEY = 'leap_chat_sessions';
+const MAX_CHAT_SESSIONS = 50;
+let currentSessionId = null; // 当前会话ID；null表示尚未开始的新会话
+
+function loadChatSessions() {
+  try {
+    const raw = localStorage.getItem(CHAT_SESSIONS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.warn('[对话历史] 读取失败:', e);
+    return [];
+  }
+}
+
+function persistChatSessions(sessions) {
+  try {
+    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+  } catch (e) {
+    // 存储超限时丢弃最旧的会话重试一次
+    if (sessions.length > 5) {
+      try {
+        localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions.slice(0, Math.floor(sessions.length / 2))));
+      } catch (_) { /* 放弃 */ }
+    }
+    console.warn('[对话历史] 保存失败:', e);
+  }
+}
+
+// 会话标题取第一条用户消息（去掉抓取/上传后缀）
+function getSessionTitle(messages) {
+  const firstUser = messages.find(m => m.role === 'user');
+  if (!firstUser) return '新对话';
+  return firstUser.content
+    .replace(/\[已自动抓取当前页面\]/g, '')
+    .replace(/\[已抓取 \d+ 个页面进行组合分析\]/g, '')
+    .replace(/\[已上传 \d+ 个文件\]/g, '')
+    .replace(/🔍\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 30) || '新对话';
+}
+
+/**
+ * 保存当前会话（在AI回复完成后调用）
+ */
+function saveCurrentSession() {
+  if (!chatHistory || chatHistory.length === 0) return;
+  const sessions = loadChatSessions();
+  const now = Date.now();
+  const title = getSessionTitle(chatHistory);
+
+  const idx = sessions.findIndex(s => s.id === currentSessionId);
+  if (idx >= 0) {
+    sessions[idx].messages = chatHistory.slice();
+    sessions[idx].updatedAt = now;
+  } else {
+    currentSessionId = `sess_${now}_${Math.random().toString(36).slice(2, 8)}`;
+    sessions.unshift({
+      id: currentSessionId,
+      title,
+      createdAt: now,
+      updatedAt: now,
+      messages: chatHistory.slice()
+    });
+  }
+  // 按 updatedAt 降序，超出上限裁剪最旧的
+  sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+  if (sessions.length > MAX_CHAT_SESSIONS) sessions.length = MAX_CHAT_SESSIONS;
+  persistChatSessions(sessions);
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+  if (diff < MIN) return '刚刚';
+  if (diff < HOUR) return Math.floor(diff / MIN) + ' 分钟前';
+  if (diff < DAY) return Math.floor(diff / HOUR) + ' 小时前';
+  if (diff < 7 * DAY) return Math.floor(diff / DAY) + ' 天前';
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function openHistoryPanel() {
+  const modal = document.getElementById('historyModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const searchInput = document.getElementById('historySearchInput');
+  if (searchInput) {
+    searchInput.value = '';
+    setTimeout(() => searchInput.focus(), 100);
+  }
+  renderHistoryList('');
+}
+
+function closeHistoryPanel() {
+  const modal = document.getElementById('historyModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function renderHistoryList(filter = '') {
+  const listEl = document.getElementById('historyList');
+  const emptyEl = document.getElementById('historyEmpty');
+  if (!listEl) return;
+
+  const kw = filter.trim().toLowerCase();
+  let sessions = loadChatSessions();
+  if (kw) {
+    sessions = sessions.filter(s =>
+      s.title.toLowerCase().includes(kw) ||
+      s.messages.some(m => (m.content || '').toLowerCase().includes(kw))
+    );
+  }
+
+  if (emptyEl) emptyEl.classList.toggle('hidden', sessions.length > 0);
+
+  listEl.innerHTML = sessions.map(s => {
+    const isCurrent = s.id === currentSessionId;
+    return `
+      <div class="history-item ${isCurrent ? 'current' : ''}" data-session-id="${s.id}">
+        <div class="history-item-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div class="history-item-main">
+          <div class="history-item-title">${escapeHtml(s.title)}</div>
+          <div class="history-item-meta">
+            <span class="msg-count">${s.messages.length} 条</span>
+            <span>${timeAgo(s.updatedAt)}</span>
+          </div>
+        </div>
+        <div class="history-item-actions">
+          <button class="history-action-btn act-rename" data-session-id="${s.id}" title="重命名">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="history-action-btn danger act-delete" data-session-id="${s.id}" title="删除">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 绑定会话项事件（事件委托）
+  listEl.querySelectorAll('.history-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      // 重命名/删除按钮点击不触发恢复
+      if (e.target.closest('.history-action-btn')) return;
+      restoreSession(item.dataset.sessionId);
+    });
+  });
+  listEl.querySelectorAll('.act-rename').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renameSession(btn.dataset.sessionId);
+    });
+  });
+  listEl.querySelectorAll('.act-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteSession(btn.dataset.sessionId);
+    });
+  });
+}
+
+/**
+ * 恢复历史会话到聊天区
+ */
+function restoreSession(sessionId) {
+  const session = loadChatSessions().find(s => s.id === sessionId);
+  if (!session) return;
+
+  currentSessionId = session.id;
+  chatHistory = session.messages.map(m => ({ role: m.role, content: m.content }));
+
+  const container = document.getElementById('chatContainer');
+  container.innerHTML = '';
+
+  session.messages.forEach(m => {
+    if (m.role === 'user') {
+      addMessage('user', m.content);
+    } else {
+      // 内容以'<'开头的是HTML卡片（如OA流程），其余按Markdown渲染
+      const isHtml = typeof m.content === 'string' && m.content.trim().startsWith('<');
+      addMessage('ai', isHtml ? m.content : renderMarkdown(m.content), true);
+    }
+  });
+
+  closeHistoryPanel();
+  setStatus('已恢复历史对话 ✓', 'success');
+  setTimeout(() => setStatus('就绪'), 2000);
+}
+
+function renameSession(sessionId) {
+  const sessions = loadChatSessions();
+  const session = sessions.find(s => s.id === sessionId);
+  if (!session) return;
+  const newTitle = prompt('重命名对话：', session.title);
+  if (newTitle === null) return; // 取消
+  const trimmed = newTitle.trim().slice(0, 50);
+  if (!trimmed) return;
+  session.title = trimmed;
+  persistChatSessions(sessions);
+  renderHistoryList(document.getElementById('historySearchInput')?.value || '');
+}
+
+function deleteSession(sessionId) {
+  let sessions = loadChatSessions();
+  const session = sessions.find(s => s.id === sessionId);
+  if (!session) return;
+  if (!confirm(`删除对话"${session.title}"？此操作不可恢复。`)) return;
+  sessions = sessions.filter(s => s.id !== sessionId);
+  persistChatSessions(sessions);
+  // 删除的是当前会话，则重置为空会话
+  if (sessionId === currentSessionId) {
+    currentSessionId = null;
+    chatHistory = [];
+  }
+  renderHistoryList(document.getElementById('historySearchInput')?.value || '');
+}
+
+function clearAllHistory() {
+  const sessions = loadChatSessions();
+  if (sessions.length === 0) return;
+  if (!confirm(`确定清空全部 ${sessions.length} 个历史对话？此操作不可恢复。`)) return;
+  localStorage.removeItem(CHAT_SESSIONS_KEY);
+  currentSessionId = null;
+  renderHistoryList('');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+// ========== 我的待办（OA待办聚合） ==========
+let _todo_fetching = false;
+
+function getTodoApiConfig() {
+  const apiUrl = (localStorage.getItem('oaTodoApiUrl') || '').trim();
+  const empId = (localStorage.getItem('employeeId') || '').trim();
+  return { apiUrl, empId };
+}
+
+/**
+ * 拉取并渲染待办列表（首页"我的待办"卡片）
+ */
+async function fetchTodoItems() {
+  const card = document.getElementById('todoCard');
+  const body = document.getElementById('todoCardBody');
+  if (!card || !body) return;
+
+  const { apiUrl, empId } = getTodoApiConfig();
+  // 未配置接口或工号时不显示卡片
+  if (!apiUrl || !empId) {
+    card.classList.add('hidden');
+    return;
+  }
+  if (_todo_fetching) return;
+  _todo_fetching = true;
+
+  card.classList.remove('hidden');
+  body.innerHTML = '<div class="todo-status">正在获取待办...</div>';
+  setTodoBadge('...');
+
+  const url = apiUrl
+    .replace(/\{employeeId\}/g, encodeURIComponent(empId))
+    .replace(/\{number\}/g, encodeURIComponent(empId))
+    .replace(/\{loginId\}/g, encodeURIComponent(empId));
+
+  try {
+    let data = null;
+    // 优先直连（扩展已声明 host_permissions，可跨域）
+    try {
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      data = await resp.json();
+    } catch (directErr) {
+      console.warn('[待办] 直连失败，尝试background代理:', directErr.message);
+      data = await fetchTodoViaProxy(url);
+    }
+
+    const items = parseTodoItems(data);
+    renderTodoItems(items);
+  } catch (err) {
+    console.error('[待办] ❌ 获取失败:', err);
+    body.innerHTML = `
+      <div class="todo-status error">
+        待办获取失败：${escapeHtml(err.message || '未知错误')}
+        <br/>
+        <button class="todo-retry-btn" id="todoRetryBtn">重试</button>
+      </div>`;
+    setTodoBadge('!');
+    const retryBtn = document.getElementById('todoRetryBtn');
+    if (retryBtn) retryBtn.addEventListener('click', () => { _todo_fetching = false; fetchTodoItems(); });
+  } finally {
+    _todo_fetching = false;
+    const refreshBtn = document.getElementById('todoRefreshBtn');
+    if (refreshBtn) refreshBtn.classList.remove('spinning');
+  }
+}
+
+/**
+ * 通过background代理拉取待办（兜底，处理CORS/内网域限制）
+ */
+function fetchTodoViaProxy(url) {
+  return new Promise((resolve, reject) => {
+    window.parent.postMessage({
+      type: 'SEND_TO_BACKGROUND',
+      callback: 'OA_TODO_RESULT',
+      backgroundMessage: { type: 'FETCH_OA_TODO', url }
+    }, '*');
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('代理请求超时'));
+    }, 15000);
+
+    const handler = (event) => {
+      if (event.data.type === 'OA_TODO_RESULT') {
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        if (event.data.success) {
+          resolve(event.data.data);
+        } else {
+          reject(new Error(event.data.error || '代理请求失败'));
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+  });
+}
+
+/**
+ * 归一化各种待办接口返回结构为数组
+ */
+function parseTodoItems(data) {
+  if (!data) return [];
+  let arr = data;
+  if (!Array.isArray(arr)) {
+    arr = data.data || data.list || data.rows || data.result || data.records;
+    if (arr && !Array.isArray(arr)) {
+      arr = arr.list || arr.records || arr.rows || [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map(it => {
+    if (typeof it === 'string') return { title: it, url: '' };
+    return {
+      title: it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '待办事项',
+      url: it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '',
+      desc: it.desc || it.description || it.content || ''
+    };
+  }).filter(it => it.title && it.title !== '待办事项');
+}
+
+function setTodoBadge(text, isZero = false) {
+  const badge = document.getElementById('todoBadge');
+  if (!badge) return;
+  badge.textContent = text;
+  badge.classList.toggle('zero', isZero);
+}
+
+function renderTodoItems(items) {
+  const body = document.getElementById('todoCardBody');
+  const card = document.getElementById('todoCard');
+  if (!body || !card) return;
+
+  if (!items || items.length === 0) {
+    setTodoBadge('0', true);
+    body.innerHTML = '<div class="todo-status">🎉 暂无待办事项，喝杯咖啡吧</div>';
+    return;
+  }
+
+  setTodoBadge(String(items.length));
+  const shown = items.slice(0, 8);
+  body.innerHTML = shown.map((it, i) => `
+    <div class="todo-item" data-url="${escapeHtml(it.url)}" data-index="${i}">
+      <span class="todo-item-dot"></span>
+      <span class="todo-item-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+      ${it.url ? '<svg class="todo-item-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>' : ''}
+    </div>
+  `).join('') + (items.length > 8 ? `<div class="todo-status">还有 ${items.length - 8} 条待办...</div>` : '');
+
+  body.querySelectorAll('.todo-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const url = item.dataset.url;
+      if (url && /^https?:\/\//.test(url)) {
+        window.open(url, '_blank');
+      }
+    });
+  });
 }
 
 // ========== 工具函数 ==========
@@ -4005,6 +4441,19 @@ function loadSettings() {
     employeeId = savedEmployeeId;
   }
 
+  // 加载OA待办接口地址（首页"我的待办"）
+  const savedTodoApiUrl = localStorage.getItem('oaTodoApiUrl');
+  if (savedTodoApiUrl !== null && document.getElementById('oaTodoApiUrl')) {
+    document.getElementById('oaTodoApiUrl').value = savedTodoApiUrl;
+  }
+  // 待办接口地址变更即时保存（与工号输入一致体验）
+  const todoApiInput = document.getElementById('oaTodoApiUrl');
+  if (todoApiInput) {
+    todoApiInput.addEventListener('input', () => {
+      localStorage.setItem('oaTodoApiUrl', todoApiInput.value.trim());
+    });
+  }
+
   // 加载FastGPT设置
   const savedFastGpt = localStorage.getItem('fastGptSettings');
   if (savedFastGpt) {
@@ -4341,7 +4790,11 @@ function init() {
   initGlobalKeyboardListener();  // 初始化全局键盘监听
   initSettingsTabs();  // 初始化设置面板Tab切换
   initOAProcessFeature();  // 初始化OA流程查询功能
-  initAutoUpdateSystem();  // 初始化在线自动更新系统
+  try {
+    initAutoUpdateSystem();  // 初始化在线自动更新系统（失败不影响其他功能初始化）
+  } catch (e) {
+    console.warn('[初始化] 自动更新系统启动失败:', e.message);
+  }
 
   // 延迟检查API配置（等设置加载完）
   // 每次打开插件都会检查，有问题就弹出提示
@@ -4385,6 +4838,20 @@ function init() {
     document.getElementById('settingsPanel').classList.toggle('hidden');
   });
   document.getElementById('saveSettings').addEventListener('click', saveSettings);
+
+  // ===== 对话历史面板 =====
+  const historyBtn = document.getElementById('historyBtn');
+  if (historyBtn) historyBtn.addEventListener('click', openHistoryPanel);
+  const closeHistoryBtn = document.getElementById('closeHistoryModal');
+  if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', closeHistoryPanel);
+  const historyOverlay = document.querySelector('#historyModal .history-overlay');
+  if (historyOverlay) historyOverlay.addEventListener('click', closeHistoryPanel);
+  const historySearchInput = document.getElementById('historySearchInput');
+  if (historySearchInput) {
+    historySearchInput.addEventListener('input', (e) => renderHistoryList(e.target.value));
+  }
+  const clearAllHistoryBtn = document.getElementById('clearAllHistoryBtn');
+  if (clearAllHistoryBtn) clearAllHistoryBtn.addEventListener('click', clearAllHistory);
 
   // 测试API连接按钮
   const testApiBtn = document.getElementById('testApiConnection');

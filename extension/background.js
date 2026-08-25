@@ -228,6 +228,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 处理OA待办查询请求（代理模式，URL由sidebar配置）
+  if (request.type === 'FETCH_OA_TODO') {
+    const url = request.url;
+
+    if (!url || !/^https?:\/\//i.test(url)) {
+      sendResponse({ success: false, error: '待办接口地址无效' });
+      return true;
+    }
+
+    (async () => {
+      try {
+        console.log('[Background] 📡 代理查询OA待办:', url);
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP错误: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[Background] ✅ OA待办查询成功');
+        sendResponse({ success: true, data: data });
+      } catch (error) {
+        console.error('[Background] ❌ OA待办查询失败:', error.message);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+
+    return true;
+  }
+
   // 打开热更新独立窗口（sidebar在iframe中无法调用showDirectoryPicker）
   if (request.type === 'OPEN_HOT_UPDATE_WINDOW') {
     const version = request.version || '';

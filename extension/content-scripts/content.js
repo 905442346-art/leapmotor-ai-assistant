@@ -281,6 +281,24 @@ if (window.__localAIAssistantInjected) {
         chrome.runtime.sendMessage(event.data.backgroundMessage, (response) => {
           if (chrome.runtime.lastError) {
             console.error('[转发到Background] 失败:', chrome.runtime.lastError.message);
+            // 有callback则把错误也回传给sidebar，避免其Promise一直挂起
+            if (event.data.callback && sidebarIframe) {
+              sidebarIframe.contentWindow.postMessage({
+                type: event.data.callback,
+                success: false,
+                error: chrome.runtime.lastError.message
+              }, '*');
+            }
+            return;
+          }
+          // 把background响应回传给sidebar（携带callback类型标识）
+          if (event.data.callback && sidebarIframe && response) {
+            sidebarIframe.contentWindow.postMessage({
+              type: event.data.callback,
+              success: response.success !== false,
+              data: response.data,
+              error: response.error
+            }, '*');
           }
         });
       } catch (err) {
