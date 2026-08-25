@@ -3490,6 +3490,7 @@ function newChat() {
       <div class="brand-tag">LEAPMOTOR</div>
       <h2>零跑AI助手</h2>
       <p>智能分析当前页面 · 随时随地获取洞察</p>
+      <div id="quickAccessGrid" class="quick-access-grid"></div>
       <div id="todoCard" class="todo-card hidden">
         <div class="todo-card-header">
           <div class="todo-card-title">
@@ -3529,6 +3530,8 @@ function newChat() {
   }
   // 首页自动拉取待办（已配置接口和工号时显示）
   fetchTodoItems();
+  // 渲染应用快捷入口
+  renderQuickAccessGrid();
 }
 
 // ========== 对话历史 ==========
@@ -4790,6 +4793,8 @@ function init() {
   initGlobalKeyboardListener();  // 初始化全局键盘监听
   initSettingsTabs();  // 初始化设置面板Tab切换
   initOAProcessFeature();  // 初始化OA流程查询功能
+  initQuickAccessManager();  // 初始化应用快捷入口管理
+  renderQuickAccessGrid();  // 渲染首页快捷入口
   try {
     initAutoUpdateSystem();  // 初始化在线自动更新系统（失败不影响其他功能初始化）
   } catch (e) {
@@ -6535,24 +6540,40 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.6.3</span>
-          <span class="changelog-version-date">2026-08-23</span>
+          <span class="changelog-version-number">v1.8.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
-          <h5 style="margin:0 0 8px;color:var(--text-primary)">🔧 更新流程优化</h5>
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 应用快捷入口</h5>
           <ul>
-            <li><strong>取消自动打开扩展页</strong> - 更新完成后不再强制跳转 chrome://extensions/，避免打断用户当前浏览</li>
-            <li><strong>更新窗口不自动关闭</strong> - 完成后显示"关闭"按钮，用户确认后手动关闭</li>
-            <li><strong>横幅按钮改为「打开扩展管理页」</strong> - 由用户主动点击才跳转，优先聚焦已打开的 extensions 标签页</li>
-            <li><strong>移除自动刷新</strong> - 不再调用 chrome.runtime.reload()，避免 sidebar iframe 在重载后出现状态异常</li>
+            <li><strong>首页快捷入口网格</strong> - 欢迎页新增应用快捷图标网格，点击即可在新标签页打开常用系统</li>
+            <li><strong>预置8个企业常用入口</strong> - OA系统、AI平台、项目管理、知识库、企业邮箱、GitHub、模型广场、流程查询</li>
+            <li><strong>自定义管理</strong> - 在「基础配置」Tab中添加/删除/排序快捷入口，支持自定义名称、URL和Emoji图标</li>
+            <li><strong>液态玻璃卡片风格</strong> - 品牌绿点缀、悬停浮起动效，与整体设计语言统一</li>
           </ul>
         </div>
       </div>
 
       <div class="changelog-version">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.6.2</span>
+          <span class="changelog-version-number">v1.7.0</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">💼 对话历史 + 待办聚合</h5>
+          <ul>
+            <li><strong>对话历史管理</strong> - 自动保存对话、搜索、恢复继续聊、管理历史会话</li>
+            <li><strong>我的待办聚合</strong> - 首页展示OA待办卡片，支持配置接口自动拉取</li>
+            <li><strong>修复background代理响应回传缺陷</strong></li>
+            <li><strong>更新系统容错处理</strong></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.6.3</span>
           <span class="changelog-version-date">2026-08-23</span>
         </div>
         <div class="changelog-version-content">
@@ -6904,6 +6925,159 @@ function showChangelogModal() {
 function closeChangelogModal() {
   const modal = document.getElementById('changelogModal');
   if (modal) modal.classList.add('hidden');
+}
+
+// ========== 应用快捷入口 ==========
+
+const QA_STORAGE_KEY = 'leap_quick_access';
+const QA_DEFAULTS = [
+  { name: 'OA系统', url: 'http://oa.leapmotor.com', icon: '📋' },
+  { name: 'AI平台', url: 'https://ai.leapmotor.com', icon: '🤖' },
+  { name: '项目管理', url: 'https://lppms.leapmotor.com', icon: '📊' },
+  { name: '知识库', url: 'https://ai.leapmotor.com/knowledge', icon: '📚' },
+  { name: '企业邮箱', url: 'https://mail.leapmotor.com', icon: '📧' },
+  { name: 'GitHub', url: 'https://github.com/905442346-art/leapmotor-ai-assistant', icon: '🐱' },
+  { name: '模型广场', url: 'https://ai.leapmotor.com/settings/model-square', icon: '🧩' },
+  { name: '流程查询', url: 'https://lppms.leapmotor.com', icon: '🔄' }
+];
+
+function loadQuickAccess() {
+  try {
+    const raw = localStorage.getItem(QA_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch (e) { /* fallthrough */ }
+  return [...QA_DEFAULTS];
+}
+
+function saveQuickAccess(list) {
+  localStorage.setItem(QA_STORAGE_KEY, JSON.stringify(list));
+}
+
+function renderQuickAccessGrid() {
+  const grid = document.getElementById('quickAccessGrid');
+  if (!grid) return;
+  const list = loadQuickAccess();
+  if (list.length === 0) {
+    grid.innerHTML = '';
+    return;
+  }
+  grid.innerHTML = list.map((item, idx) => {
+    const icon = item.icon || '🔗';
+    return `
+      <div class="qa-item" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.name)}\n${escapeHtml(item.url)}">
+        <div class="qa-item-icon">${icon}</div>
+        <div class="qa-item-name">${escapeHtml(item.name)}</div>
+      </div>
+    `;
+  }).join('');
+  grid.querySelectorAll('.qa-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const url = el.dataset.url;
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    });
+  });
+}
+
+function renderQuickAccessManager() {
+  const listEl = document.getElementById('quickAccessList');
+  if (!listEl) return;
+  const list = loadQuickAccess();
+  if (list.length === 0) {
+    listEl.innerHTML = '';
+    return;
+  }
+  listEl.innerHTML = list.map((item, idx) => `
+    <div class="qa-mgr-item" data-idx="${idx}">
+      <div class="qa-mgr-icon">${item.icon || '🔗'}</div>
+      <div class="qa-mgr-info">
+        <div class="qa-mgr-name">${escapeHtml(item.name)}</div>
+        <div class="qa-mgr-url">${escapeHtml(item.url)}</div>
+      </div>
+      <div class="qa-mgr-actions">
+        <button class="qa-mgr-btn qa-up" title="上移" data-idx="${idx}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button class="qa-mgr-btn qa-down" title="下移" data-idx="${idx}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <button class="qa-mgr-btn qa-delete" title="删除" data-idx="${idx}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('.qa-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const list = loadQuickAccess();
+      list.splice(idx, 1);
+      saveQuickAccess(list);
+      renderQuickAccessManager();
+      renderQuickAccessGrid();
+    });
+  });
+
+  listEl.querySelectorAll('.qa-up').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      if (idx === 0) return;
+      const list = loadQuickAccess();
+      [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
+      saveQuickAccess(list);
+      renderQuickAccessManager();
+      renderQuickAccessGrid();
+    });
+  });
+
+  listEl.querySelectorAll('.qa-down').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const list = loadQuickAccess();
+      if (idx >= list.length - 1) return;
+      [list[idx + 1], list[idx]] = [list[idx], list[idx + 1]];
+      saveQuickAccess(list);
+      renderQuickAccessManager();
+      renderQuickAccessGrid();
+    });
+  });
+}
+
+function initQuickAccessManager() {
+  renderQuickAccessManager();
+
+  const addBtn = document.getElementById('qaAddBtn');
+  const nameInput = document.getElementById('qaName');
+  const urlInput = document.getElementById('qaUrl');
+  const iconInput = document.getElementById('qaIcon');
+
+  if (!addBtn) return;
+
+  function handleAdd() {
+    const name = nameInput.value.trim();
+    const url = urlInput.value.trim();
+    const icon = iconInput.value.trim();
+    if (!name || !url) return;
+    let normalizedUrl = url;
+    if (!/^https?:\/\//.test(normalizedUrl)) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
+    const list = loadQuickAccess();
+    list.push({ name, url: normalizedUrl, icon: icon || '🔗' });
+    saveQuickAccess(list);
+    nameInput.value = '';
+    urlInput.value = '';
+    iconInput.value = '';
+    renderQuickAccessManager();
+    renderQuickAccessGrid();
+  }
+
+  addBtn.addEventListener('click', handleAdd);
+  urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleAdd(); });
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleAdd(); });
 }
 
 document.addEventListener('DOMContentLoaded', init);

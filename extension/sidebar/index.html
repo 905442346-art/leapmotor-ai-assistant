@@ -307,6 +307,25 @@
             <span class="field-hint">配置后首页自动展示"我的待办"。{employeeId} 会自动替换为上方工号</span>
           </div>
 
+          <!-- 应用快捷入口管理 -->
+          <div class="setting-group">
+            <label>应用快捷入口</label>
+            <span class="field-hint">在首页展示常用应用快捷图标，点击即可跳转</span>
+            <div id="quickAccessManager" class="quick-access-manager">
+              <div id="quickAccessList" class="qa-list"></div>
+              <div class="qa-add-form">
+                <div class="qa-form-row">
+                  <input type="text" id="qaName" placeholder="应用名称（如：OA系统）" class="qa-input"/>
+                  <input type="text" id="qaUrl" placeholder="https://..." class="qa-input"/>
+                </div>
+                <div class="qa-form-row">
+                  <input type="text" id="qaIcon" placeholder="Emoji图标（如：📋），留空自动生成" class="qa-input qa-icon-input"/>
+                  <button id="qaAddBtn" class="btn btn-primary btn-sm">添加</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="tab-footer-hint">
             ⚙️ 基础配置会自动保存，更新插件后不会丢失
           </div>
@@ -464,6 +483,9 @@
         <div class="brand-tag">LEAPMOTOR</div>
         <h2>零跑AI助手</h2>
         <p>智能分析当前页面 · 随时随地获取洞察</p>
+
+        <!-- 应用快捷入口 -->
+        <div id="quickAccessGrid" class="quick-access-grid"></div>
 
         <!-- AI智能推荐问题容器（首次打开时显示） -->
         <div id="smartSuggestionsContainer" class="smart-suggestions-container"></div>
