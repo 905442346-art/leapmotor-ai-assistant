@@ -5003,13 +5003,79 @@ function init() {
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
   document.getElementById('newChatBtn').addEventListener('click', newChat);
 
-  // ===== 更多功能菜单 =====
-  const moreActionsBtn = document.getElementById('moreActionsBtn');
-  const moreActionsMenu = document.getElementById('moreActionsMenu');
-  if (moreActionsBtn) moreActionsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    moreActionsMenu.classList.toggle('hidden');
-    // 更新对比按钮可用状态
+  // ===== 可拖拽浮窗更多功能 =====
+  const floatBtn = document.getElementById('floatMoreBtn');
+  const floatMenu = document.getElementById('floatMoreMenu');
+
+  // 恢复位置
+  try {
+    const savedPos = JSON.parse(localStorage.getItem('floatMorePos') || 'null');
+    if (savedPos && floatBtn) {
+      floatBtn.style.left = savedPos.x + 'px';
+      floatBtn.style.top = savedPos.y + 'px';
+      floatBtn.style.right = 'auto';
+      floatBtn.style.bottom = 'auto';
+    }
+  } catch (e) {}
+
+  // 拖拽逻辑
+  let dragState = null;
+  if (floatBtn) {
+    floatBtn.addEventListener('mousedown', (e) => {
+      // 排除点击（mousemove < 5px 才算点击）
+      dragState = {
+        startX: e.clientX, startY: e.clientY,
+        btnLeft: floatBtn.offsetLeft, btnTop: floatBtn.offsetTop,
+        moved: false
+      };
+      floatBtn.style.transition = 'none';
+      floatBtn.style.cursor = 'grabbing';
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!dragState) return;
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) dragState.moved = true;
+      if (dragState.moved) {
+        const newX = Math.max(4, Math.min(window.innerWidth - 36, dragState.btnLeft + dx));
+        const newY = Math.max(4, Math.min(window.innerHeight - 36, dragState.btnTop + dy));
+        floatBtn.style.left = newX + 'px';
+        floatBtn.style.top = newY + 'px';
+        floatBtn.style.right = 'auto';
+        floatBtn.style.bottom = 'auto';
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragState) return;
+      if (dragState.moved) {
+        // 保存位置
+        localStorage.setItem('floatMorePos', JSON.stringify({
+          x: floatBtn.offsetLeft, y: floatBtn.offsetTop
+        }));
+      } else {
+        // 点击 - 切换菜单
+        updateCompareState();
+        floatMenu.classList.toggle('hidden');
+        if (!floatMenu.classList.contains('hidden')) {
+          // 菜单定位在按钮上方
+          const btnRect = floatBtn.getBoundingClientRect();
+          floatMenu.style.left = btnRect.left + 'px';
+          floatMenu.style.bottom = (window.innerHeight - btnRect.top + 4) + 'px';
+        }
+      }
+      floatBtn.style.transition = '';
+      floatBtn.style.cursor = '';
+      dragState = null;
+    });
+  }
+  // 点击外部关闭菜单
+  document.addEventListener('click', (e) => {
+    if (floatMenu && !floatBtn.contains(e.target) && !floatMenu.contains(e.target)) {
+      floatMenu.classList.add('hidden');
+    }
+  });
+
+  function updateCompareState() {
     const compareBtn2 = document.getElementById('compareBtn');
     const compareLabel = document.getElementById('compareLabel');
     if (compareBtn2) {
@@ -5021,17 +5087,12 @@ function init() {
         if (compareLabel) compareLabel.textContent = '多页面对比';
       }
     }
-  });
-  // 点击外部关闭菜单
-  document.addEventListener('click', () => {
-    if (moreActionsMenu) moreActionsMenu.classList.add('hidden');
-  });
-  if (moreActionsMenu) moreActionsMenu.addEventListener('click', (e) => e.stopPropagation());
+  }
 
   // 页面摘要
   const summaryBtn = document.getElementById('summaryBtn');
   if (summaryBtn) summaryBtn.addEventListener('click', () => {
-    moreActionsMenu.classList.add('hidden');
+    floatMenu.classList.add("hidden");
     const summaryPrompt = `请对以下页面内容进行结构化摘要，按以下格式输出：
 
 ## 核心主题
@@ -5082,7 +5143,7 @@ function init() {
       }
       return;
     }
-    moreActionsMenu.classList.add('hidden');
+    floatMenu.classList.add("hidden");
     const comparePrompt = `请对比分析以下 ${capturedPages.length} 个页面的内容，按以下格式输出：
 
 ## 页面概览
@@ -5110,7 +5171,7 @@ function init() {
   // 元素监控 - 激活元素选择器
   const monitorBtn = document.getElementById('monitorBtn');
   if (monitorBtn) monitorBtn.addEventListener('click', () => {
-    moreActionsMenu.classList.add('hidden');
+    floatMenu.classList.add("hidden");
     // 发消息给 content.js 激活元素选择器
     window.parent.postMessage({ type: 'ACTIVATE_ELEMENT_PICKER' }, '*');
   });

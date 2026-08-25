@@ -5400,3 +5400,42 @@ body {
   margin-bottom: 10px;
   word-break: break-all;
 }
+
+/* ========== 可拖拽浮窗更多按钮 ========== */
+.float-more-btn {
+  position: fixed;
+  right: 12px;
+  bottom: 80px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 250;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.1);
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.float-more-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.float-more-btn:active {
+  cursor: grabbing;
+}
+.float-more-menu {
+  position: fixed;
+  z-index: 251;
+  background: var(--bg-elevated, rgba(255,255,255,0.95));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(var(--glass-blur));
+  padding: 4px;
+  min-width: 140px;
+}
+.float-more-menu.hidden { display: none !important; }
