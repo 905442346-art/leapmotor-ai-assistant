@@ -576,23 +576,15 @@
     <div id="quickAccessPanel" class="qa-panel hidden">
       <div class="qa-panel-arrow"></div>
       <div class="qa-panel-header">
-        <span class="qa-panel-title">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          </svg>
-          快捷入口
-        </span>
+        <span class="qa-panel-title">快捷入口</span>
         <div class="qa-panel-actions">
           <button id="qaImportBookmarksBtn" class="qa-panel-action-btn" title="导入Chrome书签">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
             </svg>
           </button>
           <button id="qaAddToggleBtn" class="qa-panel-action-btn" title="添加应用">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
@@ -603,27 +595,37 @@
       <!-- 添加表单（折叠） -->
       <div id="qaAddForm" class="qa-panel-add-form hidden">
         <div class="qa-form-row">
-          <input type="text" id="qaName" placeholder="应用名称" class="qa-input"/>
+          <input type="text" id="qaName" placeholder="应用名称" class="qa-input" maxlength="12"/>
           <input type="text" id="qaUrl" placeholder="https://..." class="qa-input"/>
         </div>
-        <div class="qa-form-row">
-          <input type="text" id="qaIcon" placeholder="Emoji图标（留空自动）" class="qa-input qa-icon-input"/>
+        <div class="qa-form-row qa-form-row-upload">
+          <label class="qa-upload-label">
+            <input type="file" id="qaImageFile" accept="image/*" class="qa-file-input"/>
+            <span class="qa-upload-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span id="qaImageName">图标</span>
+            </span>
+          </label>
           <button id="qaAddConfirmBtn" class="btn btn-primary btn-sm">添加</button>
         </div>
       </div>
 
       <!-- 书签导入列表（折叠） -->
       <div id="qaBookmarkList" class="qa-panel-bookmarks hidden">
-        <div class="qa-bookmark-loading">正在加载书签...</div>
+        <div class="qa-bookmark-loading">正在加载...</div>
       </div>
 
       <!-- 应用网格 -->
       <div id="qaPanelGrid" class="qa-panel-grid"></div>
 
-      <!-- 管理模式操作栏 -->
+      <!-- 底部操作栏 -->
       <div id="qaPanelFooter" class="qa-panel-footer">
         <button id="qaManageToggleBtn" class="qa-footer-btn">管理</button>
-        <span class="qa-footer-hint">点击应用直接打开</span>
+        <span class="qa-footer-hint">点击打开</span>
       </div>
     </div>
 

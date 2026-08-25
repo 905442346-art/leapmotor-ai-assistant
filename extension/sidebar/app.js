@@ -6536,18 +6536,33 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.8.1</span>
+          <span class="changelog-version-number">v1.8.2</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
-          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 快捷入口弹出面板重构</h5>
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 快捷入口面板优化</h5>
           <ul>
-            <li><strong>弹出面板交互</strong> - 从首页网格改为header按钮触发，点击弹出浮层面板，点击外部自动关闭</li>
-            <li><strong>Chrome书签导入</strong> - 面板内点击书签图标，浏览Chrome书签并一键添加到快捷入口</li>
-            <li><strong>面板内管理</strong> - 底部「管理」按钮进入删除模式，直接在网格中删除不需要的应用</li>
-            <li><strong>面板内添加</strong> - 点击+按钮展开添加表单，支持自定义名称、URL和Emoji图标</li>
-            <li><strong>智能图标匹配</strong> - 导入书签时根据域名自动匹配Emoji图标</li>
+            <li><strong>图片图标上传</strong> - 支持上传真实图片作为应用图标，替代Emoji，更精致</li>
+            <li><strong>精致默认图标</strong> - 未上传图片时使用SVG链接图标，统一设计语言</li>
+            <li><strong>面板紧凑化</strong> - 缩小面板尺寸(280px)，图标32px，文字9.5px，减少溢出</li>
+            <li><strong>书签导入图标优化</strong> - 导入书签时自动获取网站favicon作为图标</li>
+            <li><strong>图片压缩</strong> - 上传图片自动压缩至48x48，控制存储大小</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.8.1</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 快捷入口弹出面板</h5>
+          <ul>
+            <li><strong>弹出面板交互</strong> - header按钮触发，点击外部自动关闭</li>
+            <li><strong>Chrome书签导入</strong> - 浏览书签并一键添加</li>
+            <li><strong>面板内管理</strong> - 底部「管理」按钮进入删除模式</li>
           </ul>
         </div>
       </div>
@@ -6939,18 +6954,20 @@ function closeChangelogModal() {
 // ========== 应用快捷入口（弹出面板） ==========
 
 const QA_STORAGE_KEY = 'leap_quick_access';
+const QA_DEFAULT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
 const QA_DEFAULTS = [
-  { name: 'OA系统', url: 'http://oa.leapmotor.com', icon: '📋' },
-  { name: 'AI平台', url: 'https://ai.leapmotor.com', icon: '🤖' },
-  { name: '项目管理', url: 'https://lppms.leapmotor.com', icon: '📊' },
-  { name: '知识库', url: 'https://ai.leapmotor.com/knowledge', icon: '📚' },
-  { name: '企业邮箱', url: 'https://mail.leapmotor.com', icon: '📧' },
-  { name: 'GitHub', url: 'https://github.com/905442346-art/leapmotor-ai-assistant', icon: '🐱' },
-  { name: '模型广场', url: 'https://ai.leapmotor.com/settings/model-square', icon: '🧩' },
-  { name: '流程查询', url: 'https://lppms.leapmotor.com', icon: '🔄' }
+  { name: 'OA系统', url: 'http://oa.leapmotor.com', img: null },
+  { name: 'AI平台', url: 'https://ai.leapmotor.com', img: null },
+  { name: '项目管理', url: 'https://lppms.leapmotor.com', img: null },
+  { name: '知识库', url: 'https://ai.leapmotor.com/knowledge', img: null },
+  { name: '企业邮箱', url: 'https://mail.leapmotor.com', img: null },
+  { name: 'GitHub', url: 'https://github.com/905442346-art/leapmotor-ai-assistant', img: null },
+  { name: '模型广场', url: 'https://ai.leapmotor.com/settings/model-square', img: null },
+  { name: '流程查询', url: 'https://lppms.leapmotor.com', img: null }
 ];
 
 let qaManageMode = false;
+let qaPendingImage = null;
 
 function loadQuickAccess() {
   try {
@@ -6960,7 +6977,7 @@ function loadQuickAccess() {
       if (Array.isArray(arr)) return arr;
     }
   } catch (e) { /* fallthrough */ }
-  return [...QA_DEFAULTS];
+  return JSON.parse(JSON.stringify(QA_DEFAULTS));
 }
 
 function saveQuickAccess(list) {
@@ -6971,13 +6988,17 @@ function renderQuickAccessGrid() {
   const grid = document.getElementById('qaPanelGrid');
   if (!grid) return;
   const list = loadQuickAccess();
-  grid.innerHTML = list.map((item, idx) => `
-    <div class="qa-grid-item ${qaManageMode ? 'manage-mode' : ''}" data-idx="${idx}" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.name)}\n${escapeHtml(item.url)}">
-      <div class="qa-grid-item-icon">${item.icon || '🔗'}</div>
+  grid.innerHTML = list.map((item, idx) => {
+    const iconHtml = item.img
+      ? `<img src="${escapeHtml(item.img)}" alt="${escapeHtml(item.name)}" />`
+      : QA_DEFAULT_SVG;
+    return `
+    <div class="qa-grid-item ${qaManageMode ? 'manage-mode' : ''}" data-idx="${idx}" data-url="${escapeHtml(item.url)}" title="${escapeHtml(item.name)}">
+      <div class="qa-grid-item-icon">${iconHtml}</div>
       <div class="qa-grid-item-name">${escapeHtml(item.name)}</div>
       ${qaManageMode ? `<button class="qa-grid-item-delete" data-idx="${idx}" title="删除">×</button>` : ''}
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   grid.querySelectorAll('.qa-grid-item').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -7023,8 +7044,17 @@ function toggleQaAddForm() {
   form.classList.toggle('hidden');
   bookmarkList.classList.add('hidden');
   importBtn.classList.remove('active');
+  qaPendingImage = null;
   if (form.classList.contains('hidden')) {
     addBtn.classList.remove('active');
+    const nameInput = document.getElementById('qaName');
+    const urlInput = document.getElementById('qaUrl');
+    const imageName = document.getElementById('qaImageName');
+    const uploadBtn = document.querySelector('.qa-upload-btn');
+    if (nameInput) nameInput.value = '';
+    if (urlInput) urlInput.value = '';
+    if (imageName) imageName.textContent = '图标';
+    if (uploadBtn) uploadBtn.classList.remove('has-image');
   } else {
     addBtn.classList.add('active');
     document.getElementById('qaName')?.focus();
@@ -7038,34 +7068,72 @@ function toggleQaManageMode() {
   if (qaManageMode) {
     btn.textContent = '完成';
     btn.classList.add('active');
-    if (hint) hint.textContent = '点击 × 删除应用';
+    if (hint) hint.textContent = '点击 × 删除';
   } else {
     btn.textContent = '管理';
     btn.classList.remove('active');
-    if (hint) hint.textContent = '点击应用直接打开';
+    if (hint) hint.textContent = '点击打开';
   }
   renderQuickAccessGrid();
+}
+
+function handleQaImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 51200) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 48;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, size, size);
+        qaPendingImage = canvas.toDataURL('image/png');
+        const imageName = document.getElementById('qaImageName');
+        const uploadBtn = document.querySelector('.qa-upload-btn');
+        if (imageName) imageName.textContent = file.name.substring(0, 10);
+        if (uploadBtn) uploadBtn.classList.add('has-image');
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      qaPendingImage = ev.target.result;
+      const imageName = document.getElementById('qaImageName');
+      const uploadBtn = document.querySelector('.qa-upload-btn');
+      if (imageName) imageName.textContent = file.name.substring(0, 10);
+      if (uploadBtn) uploadBtn.classList.add('has-image');
+    };
+    reader.readAsDataURL(file);
+  }
 }
 
 function handleQaAdd() {
   const nameInput = document.getElementById('qaName');
   const urlInput = document.getElementById('qaUrl');
-  const iconInput = document.getElementById('qaIcon');
   if (!nameInput || !urlInput) return;
   const name = nameInput.value.trim();
   const url = urlInput.value.trim();
-  const icon = iconInput?.value.trim();
   if (!name || !url) return;
   let normalizedUrl = url;
   if (!/^https?:\/\//.test(normalizedUrl)) {
     normalizedUrl = 'https://' + normalizedUrl;
   }
   const list = loadQuickAccess();
-  list.push({ name, url: normalizedUrl, icon: icon || '🔗' });
+  list.push({ name, url: normalizedUrl, img: qaPendingImage });
   saveQuickAccess(list);
   nameInput.value = '';
   urlInput.value = '';
-  if (iconInput) iconInput.value = '';
+  qaPendingImage = null;
+  const imageName = document.getElementById('qaImageName');
+  const uploadBtn = document.querySelector('.qa-upload-btn');
+  if (imageName) imageName.textContent = '图标';
+  if (uploadBtn) uploadBtn.classList.remove('has-image');
   renderQuickAccessGrid();
   nameInput.focus();
 }
@@ -7073,11 +7141,10 @@ function handleQaAdd() {
 function loadBookmarks() {
   const container = document.getElementById('qaBookmarkList');
   if (!container) return;
-  container.classList.remove('hidden');
-  container.innerHTML = '<div class="qa-bookmark-loading">正在加载书签...</div>';
+  container.innerHTML = '<div class="qa-bookmark-loading">正在加载...</div>';
 
   if (!chrome.bookmarks) {
-    container.innerHTML = '<div class="qa-bookmark-loading">无法访问书签，请检查权限</div>';
+    container.innerHTML = '<div class="qa-bookmark-loading">无法访问书签</div>';
     return;
   }
 
@@ -7098,10 +7165,9 @@ function loadBookmarks() {
       return;
     }
 
-    const existing = loadQuickAccess();
-    const existingUrls = new Set(existing.map(a => a.url));
+    const existingUrls = new Set(loadQuickAccess().map(a => a.url));
 
-    container.innerHTML = bookmarks.slice(0, 100).map(b => {
+    container.innerHTML = bookmarks.slice(0, 80).map(b => {
       const added = existingUrls.has(b.url);
       let favicon = '';
       try {
@@ -7126,22 +7192,13 @@ function loadBookmarks() {
         const title = el.dataset.title;
         const existingUrls = new Set(loadQuickAccess().map(a => a.url));
         if (existingUrls.has(url)) return;
-        let icon = '🔖';
+        let favicon = null;
         try {
-          const hostname = new URL(url).hostname;
-          if (hostname.includes('github')) icon = '🐱';
-          else if (hostname.includes('mail')) icon = '📧';
-          else if (hostname.includes('oa') || hostname.includes('lppms')) icon = '📋';
-          else if (hostname.includes('ai.')) icon = '🤖';
-          else if (hostname.includes('wiki') || hostname.includes('knowledge')) icon = '📚';
-          else if (hostname.includes('docs') || hostname.includes('doc')) icon = '📄';
-          else if (hostname.includes('gitlab')) icon = '🦊';
-          else if (hostname.includes('jira') || hostname.includes('confluence')) icon = '🔧';
-          else if (hostname.includes('figma')) icon = '🎨';
-          else if (hostname.includes('notion')) icon = '📝';
+          const u = new URL(url);
+          favicon = `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=64`;
         } catch (e) { /* skip */ }
         const list = loadQuickAccess();
-        list.push({ name: title, url, icon });
+        list.push({ name: title.substring(0, 12), url, img: favicon });
         saveQuickAccess(list);
         renderQuickAccessGrid();
         const addIcon = el.querySelector('.qa-bookmark-add-btn');
@@ -7194,6 +7251,7 @@ function initQuickAccessPanel() {
   document.getElementById('qaImportBookmarksBtn')?.addEventListener('click', toggleQaBookmarks);
   document.getElementById('qaAddConfirmBtn')?.addEventListener('click', handleQaAdd);
   document.getElementById('qaManageToggleBtn')?.addEventListener('click', toggleQaManageMode);
+  document.getElementById('qaImageFile')?.addEventListener('change', handleQaImageUpload);
 
   const nameInput = document.getElementById('qaName');
   const urlInput = document.getElementById('qaUrl');
