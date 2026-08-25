@@ -687,6 +687,54 @@ body {
 .tab-icon {
   font-size: 18px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease;
+}
+
+.tab-icon svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+/* 非激活态：图标降饱和、略微缩小 */
+.settings-tab:not(.active) .tab-icon {
+  opacity: 0.55;
+  transform: scale(0.88);
+  filter: grayscale(0.25);
+}
+
+.settings-tab:not(.active):hover .tab-icon {
+  opacity: 0.85;
+  transform: scale(0.95);
+  filter: grayscale(0);
+}
+
+/* 激活态：图标放大、带淡色光晕背景 */
+.settings-tab.active .tab-icon {
+  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .settings-tab.active .tab-icon {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .settings-tab:not(.active) .tab-icon {
+  opacity: 0.5;
+  filter: grayscale(0.4) brightness(0.9);
+}
+
+[data-theme="dark"] .settings-tab:not(.active):hover .tab-icon {
+  opacity: 0.85;
+  filter: grayscale(0) brightness(1);
 }
 
 .tab-label {
@@ -3133,6 +3181,16 @@ body {
   margin: 20px 0 12px 0;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title .section-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: block;
 }
 
 .section-title:first-child {
