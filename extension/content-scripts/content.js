@@ -1523,9 +1523,10 @@ function onPickerClick(e) {
 
   deactivateElementPicker();
 
-  // 发送给 sidebar
-  if (sidebarIframe) {
-    sidebarIframe.contentWindow.postMessage({
+  // 发送给 sidebar（用 getElementById 替代作用域外的 sidebarIframe）
+  var sb = document.getElementById('local-ai-assistant-sidebar');
+  if (sb) {
+    sb.contentWindow.postMessage({
       type: 'ELEMENT_PICKED',
       element: { selector, text, tag, rect: el.getBoundingClientRect() }
     }, '*');
