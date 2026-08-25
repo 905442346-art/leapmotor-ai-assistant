@@ -6595,16 +6595,32 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.10.1</span>
+          <span class="changelog-version-number">v1.10.2</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 暗色模式配色重构</h5>
+          <ul>
+            <li><strong>背景层次化</strong> - 三层背景色：#141517(base) → #1C1E22(secondary) → #232529(elevated)，层次更清晰</li>
+            <li><strong>文字可读性</strong> - 主文字降至 #E8E8EC 减少刺眼，副文字/三级文字透明度优化</li>
+            <li><strong>输入框协调</strong> - 背景透明度降至 0.04，与暗色背景融合不突兀</li>
+            <li><strong>气泡/面板统一</strong> - AI气泡、思考过程、快捷面板均使用统一暗色表面</li>
+            <li><strong>阴影加深</strong> - glass阴影从 0.35 加至 0.45，增强层次感</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.10.1</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 摘要按钮优化</h5>
           <ul>
-            <li><strong>位置调整</strong> - 一键页面摘要按钮从header移至输入框左侧（文件上传和书签之间）</li>
-            <li><strong>图标优化</strong> - 替换为直观的文档摘要图标（文档+内容行）</li>
-            <li><strong>品牌绿色</strong> - 按钮使用品牌绿色高亮，与其他输入框按钮区分</li>
+            <li><strong>位置调整</strong> - 摘要按钮移至输入框左侧</li>
+            <li><strong>图标优化</strong> - 替换为文档摘要图标</li>
           </ul>
         </div>
       </div>
