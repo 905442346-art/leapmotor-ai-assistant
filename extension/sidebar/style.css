@@ -5349,3 +5349,4 @@ body {
   font-size: 12px;
   padding: 16px 0;
 }
+.monitor-panel.hidden { display: none !important; }
