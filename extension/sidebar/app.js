@@ -4768,11 +4768,11 @@ window.addEventListener('message', (event) => {
     if (panel) panel.classList.remove('hidden');
     // 更新面板显示选中的元素信息
     const statusText = document.getElementById('monitorStatusText');
-    if (statusText) statusText.textContent = '已选中元素: <' + pickedElement.tag + '>';
-    const elInfo = document.getElementById('monitorKeywords');
-    if (elInfo) {
-      elInfo.value = '';
-      elInfo.placeholder = '已选中: ' + (pickedElement.text || '').slice(0, 50);
+    if (statusText) statusText.textContent = '已选中: <' + pickedElement.tag + '>';
+    const pickedInfo = document.getElementById('monitorPickedInfo');
+    if (pickedInfo) {
+      const text = (pickedElement.text || '').slice(0, 80);
+      pickedInfo.innerHTML = '<strong>已选中元素</strong><br/>标签: &lt;' + pickedElement.tag + '&gt;<br/>内容: ' + (text || '(空)') + '<br/>选择器: <code style="font-size:11px;word-break:break-all">' + monitorSelector + '</code>';
     }
   }
 });
