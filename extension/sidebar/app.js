@@ -663,7 +663,7 @@ function renderPageList() {
   const compareBtn = document.getElementById('compareBtn');
   const monitorBtn = document.getElementById('monitorBtn');
   if (compareBtn) compareBtn.style.display = capturedPages.length >= 2 ? 'flex' : 'none';
-  if (monitorBtn) monitorBtn.style.display = (capturedPages.length >= 1 || currentPageContent) ? 'flex' : 'none';
+  if (monitorBtn) monitorBtn.style.display = capturedPages.length >= 1 ? "flex" : "none";
 }
 
 function getActivePageContent() {
