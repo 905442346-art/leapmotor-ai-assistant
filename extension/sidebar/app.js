@@ -658,6 +658,12 @@ function renderPageList() {
     `;
   });
   list.innerHTML = html;
+
+  // 多页面时显示对比按钮，单页面时显示监控按钮
+  const compareBtn = document.getElementById('compareBtn');
+  const monitorBtn = document.getElementById('monitorBtn');
+  if (compareBtn) compareBtn.style.display = capturedPages.length >= 2 ? 'flex' : 'none';
+  if (monitorBtn) monitorBtn.style.display = (capturedPages.length >= 1 || currentPageContent) ? 'flex' : 'none';
 }
 
 function getActivePageContent() {
@@ -4748,6 +4754,139 @@ window.addEventListener('message', (event) => {
 });
 
 // ========== 输入框 Placeholder 轮换 ==========
+
+// ========== 页面变化监控 ==========
+let monitorTimer = null;
+let monitorLastContent = null;
+let monitorKeywords = '';
+let monitorInterval = 60000;
+let monitorCountdownTimer = null;
+let monitorNextCheck = 0;
+
+function toggleMonitorPanel() {
+  const panel = document.getElementById('monitorPanel');
+  if (panel) panel.classList.toggle('hidden');
+}
+
+function startMonitoring() {
+  const intervalSelect = document.getElementById('monitorInterval');
+  const keywordsInput = document.getElementById('monitorKeywords');
+  if (!intervalSelect || !keywordsInput) return;
+  monitorInterval = parseInt(intervalSelect.value);
+  monitorKeywords = keywordsInput.value.trim();
+  monitorLastContent = null;
+  document.getElementById('monitorStartBtn').classList.add('hidden');
+  document.getElementById('monitorStopBtn').classList.remove('hidden');
+  document.getElementById('monitorStatusText').textContent = '监控中...';
+  document.getElementById('monitorInterval').disabled = true;
+  document.getElementById('monitorKeywords').disabled = true;
+  appendMonitorLog('开始监控当前页面', 'info');
+  if (monitorKeywords) appendMonitorLog('关键词：' + monitorKeywords, 'info');
+  appendMonitorLog('间隔：' + (monitorInterval / 1000) + '秒', 'info');
+  checkPageChange();
+  monitorTimer = setInterval(checkPageChange, monitorInterval);
+  startCountdown();
+}
+
+function stopMonitoring() {
+  if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+  if (monitorCountdownTimer) { clearInterval(monitorCountdownTimer); monitorCountdownTimer = null; }
+  document.getElementById('monitorStartBtn').classList.remove('hidden');
+  document.getElementById('monitorStopBtn').classList.add('hidden');
+  document.getElementById('monitorStatusText').textContent = '监控已停止';
+  document.getElementById('monitorCountdown').textContent = '';
+  document.getElementById('monitorInterval').disabled = false;
+  document.getElementById('monitorKeywords').disabled = false;
+  appendMonitorLog('监控已停止', 'warn');
+}
+
+function startCountdown() {
+  if (monitorCountdownTimer) clearInterval(monitorCountdownTimer);
+  monitorNextCheck = Date.now() + monitorInterval;
+  monitorCountdownTimer = setInterval(() => {
+    const remaining = Math.max(0, Math.round((monitorNextCheck - Date.now()) / 1000));
+    const el = document.getElementById('monitorCountdown');
+    if (el) el.textContent = remaining + 's 后下次检查';
+  }, 1000);
+}
+
+function checkPageChange() {
+  monitorNextCheck = Date.now() + monitorInterval;
+  appendMonitorLog('正在抓取页面内容...', 'loading');
+  window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
+  const handler = (event) => {
+    if (event.data.type === 'PAGE_CONTENT' && event.data.content) {
+      window.removeEventListener('message', handler);
+      const newContent = extractMonitorText(event.data.content);
+      if (monitorLastContent === null) {
+        monitorLastContent = newContent;
+        appendMonitorLog('已记录初始内容，等待变化...', 'info');
+      } else if (newContent !== monitorLastContent) {
+        const diff = findContentDiff(monitorLastContent, newContent);
+        appendMonitorLog('检测到变化！' + diff, 'alert');
+        monitorLastContent = newContent;
+        notifyPageChange(diff);
+      } else {
+        appendMonitorLog('无变化', 'muted');
+      }
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => window.removeEventListener('message', handler), 8000);
+}
+
+function extractMonitorText(content) {
+  if (!content) return '';
+  let text = content.text || '';
+  if (monitorKeywords) {
+    const kws = monitorKeywords.split(/[，,]/).map(k => k.trim()).filter(Boolean);
+    const lines = text.split('\n').filter(line => kws.some(kw => line.includes(kw)));
+    text = lines.join('\n');
+  }
+  return text;
+}
+
+function findContentDiff(oldText, newText) {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const changes = [];
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    if (oldLines[i] !== newLines[i] && newLines[i]) {
+      changes.push('第' + (i + 1) + '行变化：' + newLines[i].trim().slice(0, 80));
+    }
+  }
+  return changes.length > 0 ? changes.slice(0, 5).join(' | ') : '内容已变化';
+}
+
+function notifyPageChange(diff) {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    new Notification('页面变化监控', { body: diff.slice(0, 100) });
+  } else if (typeof Notification !== 'undefined' && Notification.permission !== 'denied') {
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') new Notification('页面变化监控', { body: diff.slice(0, 100) });
+    });
+  }
+  const input = document.getElementById('messageInput');
+  if (input) {
+    input.value = '页面变化监控检测到以下变化：\n\n' + diff + '\n\n请分析这些变化的含义。';
+    input.focus();
+    sendMessage();
+  }
+}
+
+function appendMonitorLog(text, type) {
+  const log = document.getElementById('monitorLog');
+  if (!log) return;
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const colors = { info: '#5A9A1B', alert: '#FF453A', warn: '#FF9500', muted: 'var(--text-tertiary)', loading: '#5AC8E0' };
+  const entry = document.createElement('div');
+  entry.className = 'monitor-log-entry';
+  entry.style.cssText = 'padding:4px 0;font-size:12px;color:' + (colors[type] || 'inherit') + ';border-bottom:1px solid var(--glass-border);';
+  entry.innerHTML = '<span style="color:var(--text-tertiary);margin-right:8px">' + time + '</span>' + text;
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
 function getPlaceholderHints() {
   const toggleKey = shortcutToDisplay(customShortcuts['toggle-assistant']) || (isMac ? '⌘J' : 'Ctrl+M');
   return [
@@ -4893,6 +5032,50 @@ function init() {
     };
     window.addEventListener('message', handler);
     setTimeout(() => window.removeEventListener('message', handler), 5000);
+  });
+
+  // ===== 多页面对比分析 =====
+  const compareBtn = document.getElementById('compareBtn');
+  if (compareBtn) compareBtn.addEventListener('click', () => {
+    if (capturedPages.length < 2) return;
+    compareBtn.style.transform = 'scale(0.9)';
+    setTimeout(() => compareBtn.style.transform = '', 150);
+    const comparePrompt = `请对比分析以下 ${capturedPages.length} 个页面的内容，按以下格式输出：
+
+## 页面概览
+（每个页面的主题和用途）
+
+## 关键差异
+（页面之间的主要不同点，以表格形式呈现）
+
+## 共同点
+（页面之间的共同之处）
+
+## 数据对比
+（如有数据/指标，以表格对比）
+
+## 结论与建议
+（基于对比的分析结论）`;
+    const input = document.getElementById('messageInput');
+    if (input) {
+      input.value = comparePrompt;
+      input.focus();
+      sendMessage();
+    }
+  });
+
+  // ===== 页面变化监控 =====
+  const monitorBtn = document.getElementById('monitorBtn');
+  if (monitorBtn) monitorBtn.addEventListener('click', toggleMonitorPanel);
+
+  // 监控面板按钮事件
+  const monitorStart = document.getElementById('monitorStartBtn');
+  if (monitorStart) monitorStart.addEventListener('click', startMonitoring);
+  const monitorStop = document.getElementById('monitorStopBtn');
+  if (monitorStop) monitorStop.addEventListener('click', stopMonitoring);
+  const monitorClose = document.getElementById('monitorCloseBtn');
+  if (monitorClose) monitorClose.addEventListener('click', () => {
+    document.getElementById('monitorPanel').classList.add('hidden');
   });
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsPanel').classList.toggle('hidden');
@@ -6595,18 +6778,33 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.10.2</span>
+          <span class="changelog-version-number">v1.11.0</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 多页面对比 + 页面变化监控</h5>
+          <ul>
+            <li><strong>多页面对比分析</strong> - 抓取2个以上页面后输入框自动显示对比按钮，一键生成5段式对比Prompt</li>
+            <li><strong>页面变化监控</strong> - 定时抓取页面，检测到变化时自动通知+发送AI分析</li>
+            <li><strong>监控配置</strong> - 可设间隔(30秒~10分钟)、关键词过滤</li>
+            <li><strong>变化日志</strong> - 实时显示监控日志，带时间戳</li>
+            <li><strong>浏览器通知</strong> - 变化时发送系统通知</li>
+            <li><strong>智能diff</strong> - 逐行对比定位变化行号</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.10.2</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 暗色模式配色重构</h5>
           <ul>
-            <li><strong>背景层次化</strong> - 三层背景色：#141517(base) → #1C1E22(secondary) → #232529(elevated)，层次更清晰</li>
-            <li><strong>文字可读性</strong> - 主文字降至 #E8E8EC 减少刺眼，副文字/三级文字透明度优化</li>
-            <li><strong>输入框协调</strong> - 背景透明度降至 0.04，与暗色背景融合不突兀</li>
-            <li><strong>气泡/面板统一</strong> - AI气泡、思考过程、快捷面板均使用统一暗色表面</li>
-            <li><strong>阴影加深</strong> - glass阴影从 0.35 加至 0.45，增强层次感</li>
+            <li><strong>三层背景色层次化</strong> - #141517→#1C1E22→#232529</li>
+            <li><strong>文字/输入框/气泡</strong> - 可读性优化</li>
           </ul>
         </div>
       </div>

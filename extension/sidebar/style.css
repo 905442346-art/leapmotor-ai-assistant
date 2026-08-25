@@ -5242,3 +5242,110 @@ body {
 [data-theme="dark"] .qa-grid-item:hover .qa-grid-item-icon {
   border-color: var(--accent);
 }
+
+/* ========== 页面变化监控面板 ========== */
+.monitor-panel {
+  position: fixed;
+  bottom: 60px;
+  left: 8px;
+  right: 8px;
+  max-height: 420px;
+  background: var(--bg-elevated, rgba(255,255,255,0.95));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(var(--glass-blur));
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.monitor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.monitor-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.monitor-body {
+  padding: 12px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+.monitor-config {
+  margin-bottom: 10px;
+}
+.monitor-config label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.monitor-config select,
+.monitor-config input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+.monitor-config select:focus,
+.monitor-config input:focus {
+  border-color: var(--accent);
+  background: var(--input-focus-bg);
+}
+.monitor-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+.monitor-btn {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.monitor-btn.start {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.monitor-btn.stop {
+  background: var(--error);
+  color: #fff;
+}
+.monitor-btn:hover { opacity: 0.85; }
+.monitor-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 0;
+  border-top: 1px solid var(--glass-border);
+  margin-top: 4px;
+}
+.monitor-log {
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.monitor-log:empty::before {
+  content: '暂无监控日志';
+  display: block;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 16px 0;
+}
