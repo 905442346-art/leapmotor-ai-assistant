@@ -1,3 +1,60 @@
+// ========== 右键菜单：选中文本AI操作 ==========
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'ai-explain',
+    title: 'AI 解释选中内容',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'ai-translate',
+    title: 'AI 翻译选中内容',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'ai-summarize',
+    title: 'AI 总结选中内容',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'ai-ask',
+    title: 'AI 追问选中内容',
+    contexts: ['selection']
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (!info.selectionText || !tab || !tab.id) return;
+  const actionMap = {
+    'ai-explain': 'explain',
+    'ai-translate': 'translate',
+    'ai-summarize': 'summarize',
+    'ai-ask': 'ask'
+  };
+  const action = actionMap[info.menuItemId];
+  if (!action) return;
+
+  const payload = { type: 'AI_SELECTED_TEXT', action, text: info.selectionText };
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, payload);
+  } catch (e) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content-scripts/content.js']
+      });
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ['content-scripts/content.css']
+      });
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await chrome.tabs.sendMessage(tab.id, payload);
+    } catch (e2) {
+      console.log('Cannot inject script into this page:', tab.url);
+    }
+  }
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

@@ -545,6 +545,18 @@ if (window.__localAIAssistantInjected) {
         }
       }, 500);
       if (sendResponse) sendResponse({ success: true });
+    } else if (request.type === 'AI_SELECTED_TEXT') {
+      if (!isSidebarOpen) await toggleSidebar();
+      setTimeout(() => {
+        if (sidebarIframe) {
+          sidebarIframe.contentWindow.postMessage({
+            type: 'AI_SELECTED_TEXT',
+            action: request.action,
+            text: request.text
+          }, '*');
+        }
+      }, 400);
+      if (sendResponse) sendResponse({ success: true });
     }
     return true;
   });

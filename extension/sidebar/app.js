@@ -4728,6 +4728,22 @@ window.addEventListener('message', (event) => {
     sendMessage();
   } else if (event.data.type === 'TAB_INFO' && event.data.tabInfo) {
     updateCurrentPageInfo(event.data.tabInfo);
+  } else if (event.data.type === 'AI_SELECTED_TEXT' && event.data.text) {
+    const action = event.data.action;
+    const text = event.data.text;
+    const promptMap = {
+      explain: `请解释以下内容：\n\n${text}`,
+      translate: `请将以下内容翻译成中文（如果已经是中文则翻译成英文）：\n\n${text}`,
+      summarize: `请总结以下内容的要点：\n\n${text}`,
+      ask: `基于以下内容，我的问题是：\n\n${text}`
+    };
+    const prompt = promptMap[action] || `请分析以下内容：\n\n${text}`;
+    const input = document.getElementById('messageInput');
+    if (input) {
+      input.value = prompt;
+      input.focus();
+      sendMessage();
+    }
   }
 });
 
@@ -6536,18 +6552,30 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.8.3</span>
+          <span class="changelog-version-number">v1.9.0</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 右键菜单AI操作</h5>
+          <ul>
+            <li><strong>选中文本右键AI</strong> - 在任意网页选中文本后右键，可选择「AI解释」「AI翻译」「AI总结」「AI追问」</li>
+            <li><strong>自动打开侧边栏</strong> - 如果侧边栏未打开，右键操作会自动唤起并执行</li>
+            <li><strong>智能Prompt</strong> - 根据操作类型自动构建提示词，翻译支持中英互译</li>
+            <li><strong>无需复制粘贴</strong> - 选中文本直接发送给AI，工作流更流畅</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.8.3</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ Header布局紧凑化</h5>
           <ul>
-            <li><strong>Header按钮缩小</strong> - 图标按钮从36px缩至30px，SVG从20px缩至18px</li>
-            <li><strong>Header高度缩减</strong> - 从64px降至56px，padding从20px降至12px</li>
-            <li><strong>Logo缩小</strong> - 从40px缩至34px，标题字号从16px降至14px</li>
-            <li><strong>按钮间距优化</strong> - gap从4px降至2px，消除溢出</li>
-            <li><strong>标题溢出处理</strong> - 添加ellipsis截断，防止文字撑开布局</li>
+            <li><strong>Header紧凑化</strong> - 按钮缩小，修复溢出问题</li>
           </ul>
         </div>
       </div>
