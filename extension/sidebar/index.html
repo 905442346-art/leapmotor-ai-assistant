@@ -589,13 +589,8 @@
           点击「更多」→「元素监控」后在页面上选择要监控的元素
         </div>
         <div class="monitor-config">
-          <label>监控间隔</label>
-          <select id="monitorInterval">
-            <option value="30000">30秒</option>
-            <option value="60000" selected>1分钟</option>
-            <option value="300000">5分钟</option>
-            <option value="600000">10分钟</option>
-          </select>
+          <label>监控间隔（秒，最小1）</label>
+          <input id="monitorInterval" type="number" min="1" value="60" style="width:100%;padding:6px 10px;border:1px solid var(--glass-border);border-radius:8px;background:var(--input-bg);color:var(--text-primary);font-size:13px;outline:none" />
         </div>
         <div class="monitor-actions">
           <button id="monitorStartBtn" class="monitor-btn start">开始监控</button>

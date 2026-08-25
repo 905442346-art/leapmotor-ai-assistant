@@ -4787,8 +4787,10 @@ function startMonitoring() {
     appendMonitorLog('请先点击页面选择要监控的元素', 'warn');
     return;
   }
-  const intervalSelect = document.getElementById('monitorInterval');
-  if (intervalSelect) monitorInterval = parseInt(intervalSelect.value);
+  const intervalInput = document.getElementById('monitorInterval');
+  let secs = parseInt(intervalInput.value);
+  if (isNaN(secs) || secs < 1) secs = 1;
+  monitorInterval = secs * 1000;
   monitorLastContent = null;
   const startBtn = document.getElementById('monitorStartBtn');
   const stopBtn = document.getElementById('monitorStopBtn');
@@ -4796,9 +4798,9 @@ function startMonitoring() {
   if (stopBtn) stopBtn.classList.remove('hidden');
   const statusText = document.getElementById('monitorStatusText');
   if (statusText) statusText.textContent = '监控中...';
-  if (intervalSelect) intervalSelect.disabled = true;
+  if (intervalInput) intervalInput.disabled = true;
   appendMonitorLog('开始监控元素: ' + monitorSelector, 'info');
-  appendMonitorLog('间隔: ' + (monitorInterval / 1000) + '秒', 'info');
+  appendMonitorLog('间隔: ' + secs + '秒', 'info');
   checkElementChange();
   monitorTimer = setInterval(checkElementChange, monitorInterval);
   startCountdown();
@@ -4815,8 +4817,8 @@ function stopMonitoring() {
   if (statusText) statusText.textContent = '监控已停止';
   const countdown = document.getElementById('monitorCountdown');
   if (countdown) countdown.textContent = '';
-  const intervalSelect = document.getElementById('monitorInterval');
-  if (intervalSelect) intervalSelect.disabled = false;
+  const intervalInput2 = document.getElementById('monitorInterval');
+  if (intervalInput2) intervalInput2.disabled = false;
   appendMonitorLog('监控已停止', 'warn');
 }
 
