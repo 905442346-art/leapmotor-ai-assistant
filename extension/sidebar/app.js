@@ -4855,6 +4855,45 @@ function init() {
 
   document.getElementById('sendBtn').addEventListener('click', sendMessage);
   document.getElementById('newChatBtn').addEventListener('click', newChat);
+
+  // ===== 一键页面摘要 =====
+  const summaryBtn = document.getElementById('summaryBtn');
+  if (summaryBtn) summaryBtn.addEventListener('click', () => {
+    summaryBtn.style.transform = 'scale(0.9)';
+    setTimeout(() => summaryBtn.style.transform = '', 150);
+    const summaryPrompt = `请对以下页面内容进行结构化摘要，按以下格式输出：
+
+## 核心主题
+（一句话概括页面主题）
+
+## 关键要点
+- 要点1
+- 要点2
+- 要点3
+
+## 重要数据/结论
+（提取页面中的关键数据和结论）
+
+## 行动建议
+（基于页面内容给出行动建议）`;
+    window.parent.postMessage({ type: 'GET_PAGE_CONTENT' }, '*');
+    const handler = (event) => {
+      if (event.data.type === 'PAGE_CONTENT' && event.data.content) {
+        window.removeEventListener('message', handler);
+        const pageText = event.data.content.text || event.data.content.title || '';
+        if (pageText) {
+          const input = document.getElementById('messageInput');
+          if (input) {
+            input.value = `${summaryPrompt}\n\n---\n页面标题：${event.data.content.title || ''}\n\n${pageText.slice(0, 3000)}`;
+            input.focus();
+            sendMessage();
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+    setTimeout(() => window.removeEventListener('message', handler), 5000);
+  });
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsPanel').classList.toggle('hidden');
   });
@@ -6556,16 +6595,30 @@ function showChangelogModal() {
     contentEl.innerHTML = `
       <div class="changelog-version latest">
         <div class="changelog-version-header">
-          <span class="changelog-version-number">v1.9.1</span>
+          <span class="changelog-version-number">v1.10.0</span>
           <span class="changelog-version-date">2026-08-25</span>
           <span class="changelog-badge latest-badge">最新</span>
         </div>
         <div class="changelog-version-content">
+          <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ 选中文本浮窗 + 一键页面摘要</h5>
+          <ul>
+            <li><strong>选中文本浮窗按钮</strong> - 在网页选中文本时，光标旁自动弹出品牌绿AI小按钮，点击直接发送给侧边栏AI解释</li>
+            <li><strong>浮窗交互</strong> - 悬浮在选中文本上方，带毛玻璃质感，点击外部或滚动时自动隐藏</li>
+            <li><strong>一键页面摘要</strong> - header新增摘要按钮，点击自动抓取页面正文并生成结构化摘要（核心主题/关键要点/重要数据/行动建议）</li>
+            <li><strong>摘要Prompt</strong> - 预设4段式摘要模板，AI输出结构化结果，快速浏览长文档</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="changelog-version">
+        <div class="changelog-version-header">
+          <span class="changelog-version-number">v1.9.1</span>
+          <span class="changelog-version-date">2026-08-25</span>
+        </div>
+        <div class="changelog-version-content">
           <h5 style="margin:0 0 8px;color:var(--text-primary)">⚡ Placeholder 快捷键修正</h5>
           <ul>
-            <li><strong>快捷键提示动态化</strong> - 输入框 placeholder 中的快捷键提示从硬编码 Ctrl+M 改为动态读取用户实际配置</li>
-            <li><strong>平台自适应</strong> - Mac 显示 ⌘J，Windows 显示 Ctrl+M，与底部快捷键提示和实际配置一致</li>
-            <li><strong>自定义快捷键同步</strong> - 用户修改快捷键后，placeholder 提示自动更新</li>
+            <li><strong>快捷键提示动态化</strong> - placeholder快捷键从硬编码改为动态读取配置</li>
           </ul>
         </div>
       </div>

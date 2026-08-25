@@ -598,6 +598,95 @@ if (window.__localAIAssistantInjected) {
   // 初始化全局快捷键监听（在content script层面拦截）
   initGlobalKeyboardListener();
 
+  // ========== 选中文本浮窗按钮 ==========
+  let selectionFloatBtn = null;
+  let selectionHideTimer = null;
+
+  function createSelectionFloatBtn() {
+    if (selectionFloatBtn) return selectionFloatBtn;
+    selectionFloatBtn = document.createElement('div');
+    selectionFloatBtn.id = '__leap_ai_selection_btn';
+    selectionFloatBtn.style.cssText = [
+      'position:fixed', 'z-index:2147483646', 'display:none',
+      'align-items:center', 'gap:4px',
+      'padding:5px 10px', 'border-radius:8px',
+      'background:rgba(26,179,130,0.95)',
+      'color:#fff', 'font-size:12px', 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      'font-weight:500', 'cursor:pointer',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.15)',
+      'backdrop-filter:blur(8px)', '-webkit-backdrop-filter:blur(8px)',
+      'transition:opacity 0.15s,transform 0.15s',
+      'opacity:0', 'transform:translateY(4px)',
+      'user-select:none', 'white-space:nowrap'
+    ].join(';') + ';';
+
+    const icon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" stroke="currentColor" fill="currentColor" stroke-linejoin="round"/></svg>`;
+    selectionFloatBtn.innerHTML = icon + '<span>AI</span>';
+    selectionFloatBtn.addEventListener('mouseenter', () => {
+      if (selectionHideTimer) { clearTimeout(selectionHideTimer); selectionHideTimer = null; }
+    });
+    selectionFloatBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const sel = window.getSelection();
+      const text = sel ? sel.toString().trim() : '';
+      if (!text) return;
+      if (!isSidebarOpen) toggleSidebar();
+      setTimeout(() => {
+        if (sidebarIframe) {
+          sidebarIframe.contentWindow.postMessage({
+            type: 'AI_SELECTED_TEXT',
+            action: 'explain',
+            text: text
+          }, '*');
+        }
+      }, 400);
+      hideSelectionBtn();
+    });
+    document.body.appendChild(selectionFloatBtn);
+    return selectionFloatBtn;
+  }
+
+  function showSelectionBtn(x, y) {
+    const btn = createSelectionFloatBtn();
+    btn.style.left = x + 'px';
+    btn.style.top = y + 'px';
+    btn.style.display = 'flex';
+    requestAnimationFrame(() => {
+      btn.style.opacity = '1';
+      btn.style.transform = 'translateY(0)';
+    });
+  }
+
+  function hideSelectionBtn() {
+    if (!selectionFloatBtn) return;
+    selectionFloatBtn.style.opacity = '0';
+    selectionFloatBtn.style.transform = 'translateY(4px)';
+    setTimeout(() => { if (selectionFloatBtn) selectionFloatBtn.style.display = 'none'; }, 150);
+  }
+
+  document.addEventListener('mouseup', (e) => {
+    if (e.target.closest('#__leap_ai_selection_btn')) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) { hideSelectionBtn(); return; }
+    const text = sel.toString().trim();
+    if (text.length < 3) { hideSelectionBtn(); return; }
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    const x = rect.left + rect.width / 2 - 20;
+    const y = rect.top - 36;
+    showSelectionBtn(x < 4 ? 4 : x, y < 4 ? rect.bottom + 6 : y);
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (selectionFloatBtn && !e.target.closest('#__leap_ai_selection_btn')) {
+      selectionHideTimer = setTimeout(() => hideSelectionBtn(), 100);
+    }
+  });
+
+  window.addEventListener('scroll', () => hideSelectionBtn(), { passive: true });
+
   // 把切换侧边栏的能力暴露给FAB等全局作用域的函数使用
   // （handleFloatingButtonClick 位于IIFE外，需要通过此钩子调用主流程）
   window.__leapAIAssistantToggleSidebar = toggleSidebar;
