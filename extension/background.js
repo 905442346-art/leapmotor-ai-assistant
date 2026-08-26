@@ -1,4 +1,29 @@
 // ========== 右键菜单：选中文本AI操作 ==========
+// 泛微e-cology响应解析：归一化各种返回结构为统一数组
+function parseEcologyResponse(data) {
+  if (!data) return [];
+  let arr = data;
+  if (!Array.isArray(arr)) {
+    arr = data.data || data.list || data.rows || data.result || data.records || data.datas;
+    if (arr && !Array.isArray(arr)) {
+      arr = arr.list || arr.records || arr.rows || arr.data || arr.datas || [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map(it => {
+    if (typeof it === 'string') return { title: it, url: '', requestId: '' };
+    const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '待办事项';
+    const requestId = it.requestid || it.requestId || it.id || '';
+    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl ||
+      (requestId ? '' : '');
+    const creator = it.creatname || it.creator || it.createrName || it.nodename || '';
+    const workflowName = it.workflowname || it.workflowName || it.flowType || '';
+    const createdate = it.createdate || it.createDate || it.createtime || '';
+    const nodename = it.nodename || it.nodeName || it.currentnode || '';
+    return { title, url, requestId, creator, workflowName, createdate, nodename, raw: it };
+  }).filter(it => it.title && it.title !== '待办事项');
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'ai-explain',
@@ -321,300 +346,179 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 获取E9当前登录用户信息（自动获取工号）
-  if (request.type === 'FETCH_E9_USER_INFO') {
+  // 处理泛微e-cology待办获取请求（session cookie认证）
+  if (request.type === 'FETCH_ECOLOGY_TODO') {
+    const baseUrl = (request.baseUrl || '').replace(/\/+$/, '');
+    const empId = request.employeeId || '';
+
+    if (!baseUrl) {
+      sendResponse({ success: false, error: 'e-cology系统地址未配置' });
+      return true;
+    }
+
     (async () => {
-      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
-      for (const baseUrl of baseUrls) {
-        try {
-          console.log(`[Background] 📡 获取E9用户信息: ${baseUrl}`);
-          const response = await fetch(`${baseUrl}/api/hrm/login/getUserAgentInfo`, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            credentials: 'include'
-          });
-          if (!response.ok) continue;
-          const ct = response.headers.get('content-type') || '';
-          if (!ct.includes('application/json')) continue;
-          const data = await response.json();
-          console.log(`[Background] ✅ ${baseUrl} E9用户信息获取成功`);
-          sendResponse({ success: true, data: data });
-          return;
-        } catch (e) {
-          console.log(`[Background] ${baseUrl} 用户信息失败: ${e.message}`);
+      try {
+        console.log('[Background] 📡 泛微e-cology待办查询:', baseUrl);
+
+        // Step1: 获取splitPageKey（sessionkey）
+        const formData = new URLSearchParams();
+        formData.append('actiontype', 'splitpage');
+        formData.append('viewScope', 'doing');
+        formData.append('complete', '0');
+        formData.append('method', 'all');
+        formData.append('viewcondition', '0');
+
+        const resp1 = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+            'Accept': 'application/json'
+          },
+          body: formData.toString(),
+          credentials: 'include'
+        });
+
+        if (!resp1.ok) throw new Error(`splitPageKey HTTP ${resp1.status}`);
+        const data1 = await resp1.json();
+        console.log('[Background] splitPageKey响应:', JSON.stringify(data1).substring(0, 200));
+
+        const sessionkey = data1.sessionkey || data1.sessionKey;
+        if (!sessionkey) {
+          // 某些版本直接返回列表数据
+          const items = parseEcologyResponse(data1);
+          if (items.length > 0) {
+            console.log('[Background] ✅ 泛微待办(splitPageKey直返):', items.length);
+            sendResponse({ success: true, data: { items, total: items.length } });
+            return;
+          }
+          throw new Error('未获取到sessionkey或列表数据');
         }
-      }
-      sendResponse({ success: false, error: '未获取到用户信息，请确保已登录OA系统' });
-    })();
-    return true;
-  }
 
-  // 获取E9待办列表（泛微E9标准API，使用当前登录会话，无需工号）
-  if (request.type === 'FETCH_E9_TODO') {
-    (async () => {
-      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
+        // Step2: 用sessionkey获取实际列表数据
+        let items = [];
+        let total = 0;
 
-      // 方案1: E9标准API - splitPageKey (form-encoded) + 组件库接口获取列表数据
-      for (const baseUrl of baseUrls) {
-        try {
-          console.log(`[Background] 📡 E9待办API尝试: ${baseUrl}`);
+        // 尝试多个可能的列表数据接口
+        const tableEndpoints = [
+          '/api/workflow/reqlist/getTableDataList',
+          '/api/ec/dev/table/getTableData',
+          '/api/workflow/reqlist/getDoingList'
+        ];
 
-          // Step 1: 获取sessionkey (使用form-encoded格式，E9标准)
-          const splitResp = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-            credentials: 'include',
-            body: new URLSearchParams({
-              actiontype: 'splitpage',
-              viewScope: 'doing',
-              complete: '0',
-              viewcondition: '0',
-              method: 'all'
-            }).toString()
-          });
-
-          if (!splitResp.ok) {
-            console.log(`[Background] ${baseUrl} splitPageKey HTTP ${splitResp.status}`);
-            continue;
-          }
-
-          const ct = splitResp.headers.get('content-type') || '';
-          if (!ct.includes('application/json')) {
-            console.log(`[Background] ${baseUrl} splitPageKey 返回非JSON: ${ct}`);
-            continue;
-          }
-
-          const splitData = await splitResp.json();
-          const sessionkey = splitData.sessionkey;
-          if (!sessionkey) {
-            console.log(`[Background] ${baseUrl} splitPageKey 无sessionkey:`, splitData);
-            continue;
-          }
-          console.log(`[Background] ✅ ${baseUrl} sessionkey: ${sessionkey.substring(0, 20)}...`);
-
-          // Step 2: 用sessionkey获取列表数据，尝试多个组件库接口
-          const listEndpoints = [
-            { url: '/api/ec/dev/table/getTableData', method: 'POST', ct: 'application/x-www-form-urlencoded' },
-            { url: '/api/workflow/reqlist/getListResult', method: 'POST', ct: 'application/x-www-form-urlencoded' },
-            { url: '/api/workflow/mobile/getListResult', method: 'POST', ct: 'application/x-www-form-urlencoded' },
-            { url: '/api/data/com/table/getTableData', method: 'POST', ct: 'application/x-www-form-urlencoded' }
-          ];
-
-          for (const ep of listEndpoints) {
-            try {
-              const listResp = await fetch(`${baseUrl}${ep.url}`, {
-                method: ep.method,
-                headers: { 'Content-Type': ep.ct, 'Accept': 'application/json' },
-                credentials: 'include',
-                body: new URLSearchParams({
-                  sessionkey: sessionkey,
-                  pageIndex: '1',
-                  pageSize: '20',
-                  page: '1',
-                  limit: '20'
-                }).toString()
-              });
-
-              if (!listResp.ok) continue;
-              const listCt = listResp.headers.get('content-type') || '';
-              if (!listCt.includes('application/json')) continue;
-
-              const listData = await listResp.json();
-              console.log(`[Background] ✅ ${baseUrl}${ep.url} 返回数据:`, Object.keys(listData));
-
-              // 尝试解析各种可能的返回格式
-              const items = listData.data?.datas || listData.data?.data || listData.datas || listData.data || listData.rows || [];
-              if (Array.isArray(items) && items.length > 0) {
-                console.log(`[Background] ✅ ${baseUrl} E9待办列表获取成功, ${items.length} 条`);
-                sendResponse({ success: true, data: items });
-                return;
-              }
-            } catch (e) {
-              console.log(`[Background] ${baseUrl}${ep.url} 失败: ${e.message}`);
-            }
-          }
-
-          // 如果组件库接口都失败，尝试用 getAllWorkflowRequestList
+        for (const ep of tableEndpoints) {
           try {
-            const allResp = await fetch(`${baseUrl}/api/workflow/paService/getAllWorkflowRequestList`, {
+            const reqData = new URLSearchParams();
+            reqData.append('sessionkey', sessionkey);
+            reqData.append('pageNo', '1');
+            reqData.append('pageSize', '20');
+
+            const resp2 = await fetch(`${baseUrl}${ep}`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-              credentials: 'include',
-              body: new URLSearchParams({
-                pageIndex: '1',
-                pageSize: '20'
-              }).toString()
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+                'Accept': 'application/json'
+              },
+              body: reqData.toString(),
+              credentials: 'include'
             });
-            if (allResp.ok) {
-              const allCt = allResp.headers.get('content-type') || '';
-              if (allCt.includes('application/json')) {
-                const allData = await allResp.json();
-                const items = allData.data?.datas || allData.datas || allData.data || allData.rows || allData.requestlist || [];
-                if (Array.isArray(items) && items.length > 0) {
-                  console.log(`[Background] ✅ ${baseUrl} getAllWorkflowRequestList 成功, ${items.length} 条`);
-                  sendResponse({ success: true, data: items });
-                  return;
-                }
+
+            if (resp2.ok) {
+              const data2 = await resp2.json();
+              console.log('[Background] 列表接口响应:', ep, JSON.stringify(data2).substring(0, 300));
+              items = parseEcologyResponse(data2);
+              if (items.length > 0) {
+                total = data2.total || data2.totalCount || items.length;
+                console.log('[Background] ✅ 泛微待办列表:', items.length, 'via', ep);
+                break;
               }
             }
           } catch (e) {
-            console.log(`[Background] ${baseUrl} getAllWorkflowRequestList 失败: ${e.message}`);
-          }
-
-        } catch (e) {
-          console.log(`[Background] ${baseUrl} API失败: ${e.message}`);
-        }
-      }
-
-      // 方案2: 从OA页面DOM提取待办
-      try {
-        console.log('[Background] 📡 尝试从OA页面DOM提取待办...');
-        const tabs = await chrome.tabs.query({ url: '*://oa.leapmotor.com/*' });
-        if (tabs.length === 0) {
-          // 也尝试 noa 域名
-          const noaTabs = await chrome.tabs.query({ url: '*://noa.leapmotor.com/*' });
-          if (noaTabs.length === 0) {
-            sendResponse({ success: false, error: '未找到OA页面，请先在浏览器中打开 oa.leapmotor.com 并登录' });
-            return;
+            console.warn('[Background] 列表接口失败:', ep, e.message);
           }
         }
 
-        // 找到OA标签页，注入脚本提取待办
-        const oaTabs = tabs.length > 0 ? tabs : await chrome.tabs.query({ url: '*://noa.leapmotor.com/*' });
-        const oaTab = oaTabs[0];
-        console.log(`[Background] 找到OA标签页: ${oaTab.url}`);
+        if (items.length === 0) {
+          // 最后尝试getToDoRequest接口
+          try {
+            const reqData3 = new URLSearchParams();
+            reqData3.append('userId', empId);
+            reqData3.append('pageNo', '1');
+            reqData3.append('pageSize', '20');
 
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: oaTab.id, allFrames: true },
-          func: () => {
-            const items = [];
-
-            // 方案A: 只查找包含 requestid 的链接（最可靠的流程标识）
-            const reqLinks = document.querySelectorAll('a[href*="requestid"], a[href*="requestId"]');
-            reqLinks.forEach(link => {
-              const title = link.textContent?.trim() || link.title || '';
-              const url = link.href || '';
-              const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
-              const requestId = match ? match[1] : '';
-              // 过滤导航类链接（标题太短或包含导航关键词）
-              if (title && title.length > 2 && !title.includes('首页') && !title.includes('门户') && !title.includes('入职')) {
-                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
-              }
+            const resp3 = await fetch(`${baseUrl}/api/workflow/getToDoRequest`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+                'Accept': 'application/json'
+              },
+              body: reqData3.toString(),
+              credentials: 'include'
             });
 
-            if (items.length > 0) return items;
-
-            // 方案B: 在主内容区域查找表格行
-            const contentSelectors = [
-              '.wea-new-idx-content', '.wea-content', '.main-content',
-              '.ant-table-wrapper', '.ant-spin-nested-loading',
-              '#contentWrapper', '.workflow-list-container', '.list-content'
-            ];
-
-            for (const csel of contentSelectors) {
-              const contentEl = document.querySelector(csel);
-              if (!contentEl) continue;
-
-              const tableSelectors = [
-                '.ant-table-tbody > tr',
-                '.el-table__row',
-                'table tbody tr',
-                '[role="row"]'
-              ];
-
-              for (const tsel of tableSelectors) {
-                const rows = contentEl.querySelectorAll(tsel);
-                if (rows.length === 0) continue;
-
-                rows.forEach(row => {
-                  const link = row.querySelector('a[href*="requestid"], a[href*="requestId"], a[href]');
-                  const title = link?.textContent?.trim() || row.querySelector('td')?.textContent?.trim() || '';
-                  const url = link?.href || '';
-                  const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
-                  const requestId = match ? match[1] : '';
-                  const cells = row.querySelectorAll('td');
-                  let creater = '', createdate = '';
-                  if (cells.length >= 2) creater = cells[1]?.textContent?.trim() || '';
-                  if (cells.length >= 3) createdate = cells[2]?.textContent?.trim() || '';
-                  if (title && title.length > 2 && !title.includes('暂无数据') && !title.includes('No data') && !title.includes('入职') && !title.includes('必读')) {
-                    items.push({ title, url, requestId, workflowname: '', nodename: '', creater, createdate });
-                  }
-                });
-
-                if (items.length > 0) return items;
-              }
+            if (resp3.ok) {
+              const data3 = await resp3.json();
+              console.log('[Background] getToDoRequest响应:', JSON.stringify(data3).substring(0, 300));
+              items = parseEcologyResponse(data3);
+              total = items.length;
             }
-
-            // 方案C: 调试信息
-            const bodyText = document.body?.innerText?.substring(0, 3000) || '';
-            const allHrefs = Array.from(document.querySelectorAll('a[href]')).map(a => ({text: a.textContent?.trim()?.substring(0, 50), href: a.href})).filter(a => a.text.length > 0).slice(0, 30);
-            const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({src: f.src, id: f.id, name: f.name}));
-            return { _debug: true, bodyTextPreview: bodyText.substring(0, 500), sampleLinks: allHrefs, iframes, title: document.title, url: location.href };
-          }
-        });
-
-        // 合并所有 frame 的结果
-        let todoItems = [];
-        let debugInfo = null;
-        for (const r of results) {
-          if (Array.isArray(r.result) && r.result.length > 0) {
-            todoItems = todoItems.concat(r.result);
-          } else if (r.result && r.result._debug && !debugInfo) {
-            debugInfo = r.result;
+          } catch (e) {
+            console.warn('[Background] getToDoRequest失败:', e.message);
           }
         }
 
-        if (todoItems.length > 0) {
-          console.log(`[Background] DOM提取到 ${todoItems.length} 条待办`);
-          sendResponse({ success: true, data: todoItems });
+        if (items.length === 0) {
+          sendResponse({ success: false, error: '已登录但未获取到待办数据，可能需要检查e-cology版本或权限' });
         } else {
-          if (debugInfo) {
-            console.log('[Background] DOM调试信息:', debugInfo);
-            const iframeInfo = debugInfo.iframes?.length > 0 ? `，发现 ${debugInfo.iframes.length} 个iframe: ${debugInfo.iframes.map(f => f.src?.substring(0, 80)).join(', ')}` : '';
-            sendResponse({ success: false, error: `页面「${debugInfo.title}」未匹配到待办数据${iframeInfo}` });
-          } else {
-            sendResponse({ success: false, error: 'OA页面未找到待办列表，请确保已打开待办页面' });
-          }
+          sendResponse({ success: true, data: { items, total } });
         }
-      } catch (domErr) {
-        console.error('[Background] DOM提取失败:', domErr.message);
-        sendResponse({ success: false, error: '获取待办失败：' + domErr.message });
+      } catch (error) {
+        console.error('[Background] ❌ 泛微待办查询失败:', error.message);
+        const hint = error.message.includes('HTTP 401') || error.message.includes('HTTP 403')
+          ? '请先在浏览器中登录泛微e-cology系统'
+          : error.message;
+        sendResponse({ success: false, error: hint });
       }
     })();
+
     return true;
   }
 
-  // 获取E9流程详情（用于AI智能预审）
-  if (request.type === 'FETCH_E9_WORKFLOW_DETAIL') {
+  // 处理泛微e-cology流程详情获取请求
+  if (request.type === 'FETCH_ECOLOGY_DETAIL') {
+    const baseUrl = (request.baseUrl || '').replace(/\/+$/, '');
     const requestId = request.requestId;
-    if (!requestId) {
-      sendResponse({ success: false, error: '缺少requestId' });
+
+    if (!baseUrl || !requestId) {
+      sendResponse({ success: false, error: '参数不完整' });
       return true;
     }
+
     (async () => {
-      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
-      for (const baseUrl of baseUrls) {
-        try {
-          const apiUrl = `${baseUrl}/api/workflow/getWorkflowRequest?requestId=${encodeURIComponent(requestId)}`;
-          console.log('[Background] 📡 获取E9流程详情:', apiUrl);
-          const response = await fetch(apiUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            credentials: 'include'
-          });
-          if (!response.ok) continue;
-          const ct = response.headers.get('content-type') || '';
-          if (!ct.includes('application/json')) continue;
-          const data = await response.json();
-          console.log(`[Background] ✅ ${baseUrl} E9流程详情获取成功`);
-          sendResponse({ success: true, data: data });
-          return;
-        } catch (error) {
-          console.error(`[Background] ${baseUrl} 流程详情失败:`, error.message);
-        }
+      try {
+        console.log('[Background] 📡 泛微流程详情:', requestId);
+        const formData = new URLSearchParams();
+        formData.append('requestId', requestId);
+
+        const resp = await fetch(`${baseUrl}/api/workflow/getRequest`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+            'Accept': 'application/json'
+          },
+          body: formData.toString(),
+          credentials: 'include'
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        console.log('[Background] ✅ 流程详情获取成功');
+        sendResponse({ success: true, data });
+      } catch (error) {
+        console.error('[Background] ❌ 流程详情获取失败:', error.message);
+        sendResponse({ success: false, error: error.message });
       }
-      sendResponse({ success: false, error: '获取流程详情失败，请确保已登录OA系统' });
     })();
+
     return true;
   }
 

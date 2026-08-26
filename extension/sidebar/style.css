@@ -3476,7 +3476,7 @@ body {
 }
 
 .todo-card-body {
-  max-height: 220px;
+  max-height: 350px;
   overflow-y: auto;
 }
 
@@ -3521,33 +3521,6 @@ body {
   color: var(--text-tertiary);
 }
 
-.todo-ai-btn {
-  flex-shrink: 0;
-  width: 22px; height: 22px;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  opacity: 0.6;
-  transition: all 0.2s;
-  padding: 0;
-}
-.todo-ai-btn:hover {
-  opacity: 1;
-  background: var(--accent-glow);
-  transform: scale(1.1);
-}
-
-.todo-hint {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-}
-
 .todo-status {
   padding: 24px 16px;
   text-align: center;
@@ -3578,6 +3551,221 @@ body {
 
 [data-theme="dark"] .todo-item-dot {
   background: #FBBF24;
+}
+
+/* ========== OA系统类型选择 ========== */
+.oa-type-selector {
+  display: flex;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.radio-option input[type="radio"] {
+  accent-color: var(--accent-color);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.radio-option:hover {
+  color: var(--text-primary);
+}
+
+/* ========== 泛微待办列表+AI预审样式 ========== */
+.todo-batch-actions {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.todo-batch-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent-color);
+  background: rgba(124, 179, 66, 0.08);
+  color: var(--accent-color);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.todo-batch-btn:hover:not(:disabled) {
+  background: rgba(124, 179, 66, 0.15);
+}
+
+.todo-batch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.todo-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.todo-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.todo-item-ecology {
+  flex-wrap: wrap;
+}
+
+.todo-item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.todo-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todo-meta-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+  white-space: nowrap;
+}
+
+.todo-meta-text {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.todo-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.todo-preReview-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.todo-preReview-btn:hover {
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.1);
+  transform: scale(1.1);
+}
+
+.todo-prereview-result {
+  width: 100%;
+  padding: 0 14px;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
+}
+
+.todo-prereview-result:not(.hidden) {
+  max-height: 400px;
+  padding: 8px 14px 10px;
+}
+
+.prereview-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.loading-spinner-sm {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--glass-border);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.prereview-content {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: rgba(245, 158, 11, 0.06);
+  border-left: 3px solid #F59E0B;
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.prereview-content strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.prereview-error {
+  font-size: 12px;
+  color: #EF4444;
+  padding: 6px 0;
+}
+
+.prereview-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+[data-theme="dark"] .todo-meta-tag {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60A5FA;
+}
+
+[data-theme="dark"] .prereview-content {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+[data-theme="dark"] .todo-preReview-btn:hover {
+  color: #FBBF24;
+  background: rgba(251, 191, 36, 0.1);
 }
 
 /* ========== 在线更新功能样式 ========== */

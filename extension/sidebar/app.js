@@ -3826,15 +3826,35 @@ function escapeHtml(text) {
 // ========== 我的待办（OA待办聚合） ==========
 let _todo_fetching = false;
 
+function getTodoApiConfig() {
+  const oaType = localStorage.getItem('oaSystemType') || 'custom';
+  const apiUrl = (localStorage.getItem('oaTodoApiUrl') || '').trim();
+  const empId = (localStorage.getItem('employeeId') || '').trim();
+  const ecologyUrl = (localStorage.getItem('ecologyBaseUrl') || '').trim();
+  return { oaType, apiUrl, empId, ecologyUrl };
+}
+
 /**
  * 拉取并渲染待办列表（首页"我的待办"卡片）
- * 使用泛微E9标准API，通过当前登录会话获取，无需配置接口地址和工号
  */
 async function fetchTodoItems() {
   const card = document.getElementById('todoCard');
   const body = document.getElementById('todoCardBody');
   if (!card || !body) return;
 
+  const { oaType, apiUrl, empId, ecologyUrl } = getTodoApiConfig();
+  // 根据系统类型检查配置
+  if (oaType === 'ecology') {
+    if (!ecologyUrl || !empId) {
+      card.classList.add('hidden');
+      return;
+    }
+  } else {
+    if (!apiUrl || !empId) {
+      card.classList.add('hidden');
+      return;
+    }
+  }
   if (_todo_fetching) return;
   _todo_fetching = true;
 
@@ -3843,20 +3863,32 @@ async function fetchTodoItems() {
   setTodoBadge('...');
 
   try {
-    // 通过background代理调用E9标准API（使用登录会话，无需工号）
-    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_TODO' });
-    if (!response || !response.success) {
-      throw new Error(response?.error || '获取失败');
+    let items = [];
+    if (oaType === 'ecology') {
+      items = await fetchEcologyTodoItems(ecologyUrl, empId);
+    } else {
+      const url = apiUrl
+        .replace(/\{employeeId\}/g, encodeURIComponent(empId))
+        .replace(/\{number\}/g, encodeURIComponent(empId))
+        .replace(/\{loginId\}/g, encodeURIComponent(empId));
+
+      let data = null;
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = await resp.json();
+      } catch (directErr) {
+        console.warn('[待办] 直连失败，尝试background代理:', directErr.message);
+        data = await fetchTodoViaProxy(url);
+      }
+      items = parseTodoItems(data);
     }
-    const items = parseTodoItems(response.data);
     renderTodoItems(items);
   } catch (err) {
     console.error('[待办] ❌ 获取失败:', err);
     body.innerHTML = `
       <div class="todo-status error">
         待办获取失败：${escapeHtml(err.message || '未知错误')}
-        <br/>
-        <span class="todo-hint">请确保已登录OA系统 (oa.leapmotor.com)</span>
         <br/>
         <button class="todo-retry-btn" id="todoRetryBtn">重试</button>
       </div>`;
@@ -3868,6 +3900,47 @@ async function fetchTodoItems() {
     const refreshBtn = document.getElementById('todoRefreshBtn');
     if (refreshBtn) refreshBtn.classList.remove('spinning');
   }
+}
+
+/**
+ * 泛微e-cology待办获取（通过background代理，session cookie认证）
+ */
+function fetchEcologyTodoItems(baseUrl, empId) {
+  return new Promise((resolve, reject) => {
+    window.parent.postMessage({
+      type: 'SEND_TO_BACKGROUND',
+      callback: 'ECOLOGY_TODO_RESULT',
+      backgroundMessage: { type: 'FETCH_ECOLOGY_TODO', baseUrl, employeeId: empId }
+    }, '*');
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('泛微待办请求超时'));
+    }, 20000);
+
+    const handler = (event) => {
+      if (event.data.type === 'ECOLOGY_TODO_RESULT') {
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        if (event.data.success && event.data.data) {
+          const items = (event.data.data.items || []).map(it => ({
+            title: it.title || '待办事项',
+            url: it.url || '',
+            desc: it.workflowName ? `流程: ${it.workflowName}` : '',
+            requestId: it.requestId || '',
+            creator: it.creator || '',
+            workflowName: it.workflowName || '',
+            createdate: it.createdate || '',
+            nodename: it.nodename || ''
+          }));
+          resolve(items);
+        } else {
+          reject(new Error(event.data.error || '泛微待办获取失败'));
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+  });
 }
 
 /**
@@ -3907,55 +3980,20 @@ function fetchTodoViaProxy(url) {
 function parseTodoItems(data) {
   if (!data) return [];
   let arr = data;
-  let header = null;
-
-  // 处理各种E9返回格式
   if (!Array.isArray(arr)) {
-    // 尝试多种嵌套路径
-    arr = data.data?.datas || data.data?.data || data.data?.list || data.data?.rows || data.data?.records || data.data;
+    arr = data.data || data.list || data.rows || data.result || data.records;
     if (arr && !Array.isArray(arr)) {
-      arr = arr.datas || arr.list || arr.records || arr.rows || arr.data || [];
+      arr = arr.list || arr.records || arr.rows || [];
     }
-    if (!Array.isArray(arr)) {
-      arr = data.datas || data.list || data.rows || data.result || data.records || [];
-    }
-    // 提取header信息（E9组件库可能返回header+datas格式）
-    header = data.data?.header || data.header || data.data?.columns || null;
   }
   if (!Array.isArray(arr)) return [];
-
-  // 如果header存在且datas是数组的数组，尝试映射
-  if (header && arr.length > 0 && Array.isArray(arr[0])) {
-    const headerKeys = header.map(h => typeof h === 'string' ? h.toLowerCase() : (h.key || h.dataIndex || h.field || '').toLowerCase());
-    return arr.map(row => {
-      const obj = {};
-      headerKeys.forEach((key, i) => { obj[key] = row[i] || ''; });
-      const title = obj.requestname || obj.title || obj['流程标题'] || obj.name || '';
-      const requestId = obj.requestid || obj.requestid || obj.id || '';
-      const url = obj.pcurl || obj.url || obj.href || (requestId ? `https://oa.leapmotor.com/wui/index.html#/workflow/req?requestid=${requestId}` : '');
-      const parts = [];
-      if (obj.workflowname || obj['流程类型']) parts.push(obj.workflowname || obj['流程类型']);
-      if (obj.nodename || obj['当前节点']) parts.push(obj.nodename || obj['当前节点']);
-      if (obj.creater || obj['创建人']) parts.push(`发起人: ${obj.creater || obj['创建人']}`);
-      if (obj.createdate || obj['创建日期']) parts.push(obj.createdate || obj['创建日期']);
-      const desc = parts.join(' · ');
-      return { title, url, desc, requestId };
-    }).filter(it => it.title);
-  }
-
   return arr.map(it => {
-    if (typeof it === 'string') return { title: it, url: '', requestId: '' };
-    if (Array.isArray(it)) return { title: String(it[0] || ''), url: '', requestId: String(it[1] || '') };
-    const title = it.requestname || it.requestName || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '';
-    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || (it.requestid ? `https://oa.leapmotor.com/wui/index.html#/workflow/req?requestid=${it.requestid}` : '');
-    const requestId = it.requestid || it.requestId || it.id || '';
-    const parts = [];
-    if (it.workflowname || it.workflowName) parts.push(it.workflowname || it.workflowName);
-    if (it.nodename || it.nodeName) parts.push(it.nodename || it.nodeName);
-    if (it.creater || it.creator) parts.push(`发起人: ${it.creater || it.creator}`);
-    if (it.createdate || it.createDate) parts.push(it.createdate || it.createDate);
-    const desc = parts.join(' · ') || it.desc || it.description || it.content || '';
-    return { title: title || '待办事项', url, desc, requestId };
+    if (typeof it === 'string') return { title: it, url: '' };
+    return {
+      title: it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '待办事项',
+      url: it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '',
+      desc: it.desc || it.description || it.content || ''
+    };
   }).filter(it => it.title && it.title !== '待办事项');
 }
 
@@ -3977,95 +4015,308 @@ function renderTodoItems(items) {
     return;
   }
 
+  _todo_items_cache = items;
   setTodoBadge(String(items.length));
-  const shown = items.slice(0, 8);
-  body.innerHTML = shown.map((it, i) => `
-    <div class="todo-item" data-url="${escapeHtml(it.url)}" data-request-id="${escapeHtml(it.requestId)}" data-index="${i}">
-      <span class="todo-item-dot"></span>
-      <span class="todo-item-title" title="${escapeHtml(it.desc || it.title)}">${escapeHtml(it.title)}</span>
-      ${it.requestId ? `<button class="todo-ai-btn" data-ai-review="${escapeHtml(it.requestId)}" title="AI智能预审"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z"/></svg></button>` : ''}
-      ${it.url ? '<svg class="todo-item-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>' : ''}
-    </div>
-  `).join('') + (items.length > 8 ? `<div class="todo-status">还有 ${items.length - 8} 条待办...</div>` : '');
+  const shown = items.slice(0, 10);
+  const hasEcology = items.some(it => it.requestId);
 
+  body.innerHTML = `
+    ${hasEcology ? `
+      <div class="todo-batch-actions">
+        <button id="batchPreReviewBtn" class="todo-batch-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 11l3 3L22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          全部AI预审
+        </button>
+      </div>
+    ` : ''}
+    <div class="todo-list">
+      ${shown.map((it, i) => `
+        <div class="todo-item ${it.requestId ? 'todo-item-ecology' : ''}" data-index="${i}" data-url="${escapeHtml(it.url || '')}" data-request-id="${escapeHtml(it.requestId || '')}">
+          <div class="todo-item-main">
+            <span class="todo-item-dot"></span>
+            <div class="todo-item-info">
+              <span class="todo-item-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+              ${(it.workflowName || it.creator || it.createdate) ? `
+                <div class="todo-item-meta">
+                  ${it.workflowName ? `<span class="todo-meta-tag">${escapeHtml(it.workflowName)}</span>` : ''}
+                  ${it.creator ? `<span class="todo-meta-text">${escapeHtml(it.creator)}</span>` : ''}
+                  ${it.createdate ? `<span class="todo-meta-text">${escapeHtml(it.createdate.substring(0, 10))}</span>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          <div class="todo-item-actions">
+            ${it.requestId ? `
+              <button class="todo-preReview-btn" data-index="${i}" title="AI智能预审">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+              </button>
+            ` : ''}
+            ${it.url ? '<svg class="todo-item-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>' : ''}
+          </div>
+          <div class="todo-prereview-result hidden" id="preReviewResult${i}"></div>
+        </div>
+      `).join('')}
+    </div>
+    ${items.length > 10 ? `<div class="todo-status">还有 ${items.length - 10} 条待办...</div>` : ''}
+  `;
+
+  // 点击待办项
   body.querySelectorAll('.todo-item').forEach(item => {
-    const aiBtn = item.querySelector('.todo-ai-btn');
-    if (aiBtn) {
-      aiBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const reqId = aiBtn.dataset.aiReview;
-        if (reqId) aiPreReviewTodo(reqId, item.querySelector('.todo-item-title').textContent);
-      });
-    }
     item.addEventListener('click', (e) => {
-      if (e.target.closest('.todo-ai-btn')) return;
+      if (e.target.closest('.todo-preReview-btn') || e.target.closest('.todo-prereview-result')) return;
       const url = item.dataset.url;
       if (url && /^https?:\/\//.test(url)) {
         window.open(url, '_blank');
       }
     });
   });
+
+  // AI预审按钮
+  body.querySelectorAll('.todo-preReview-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.index);
+      preReviewTodo(idx);
+    });
+  });
+
+  // 全部预审按钮
+  const batchBtn = document.getElementById('batchPreReviewBtn');
+  if (batchBtn) {
+    batchBtn.addEventListener('click', () => batchPreReview());
+  }
 }
 
-async function aiPreReviewTodo(requestId, title) {
-  console.log('[AI预审] 📡 开始预审流程:', title, 'ID:', requestId);
-  const input = document.getElementById('messageInput');
-  if (input) {
-    input.value = `🔍 正在获取流程详情...`;
-    input.focus();
-  }
+// ========== AI智能预审 ==========
+let _todo_items_cache = [];
+let _prereview_in_progress = new Set();
+
+/**
+ * 获取泛微流程详情（通过background代理）
+ */
+function fetchEcologyDetail(baseUrl, requestId) {
+  return new Promise((resolve, reject) => {
+    window.parent.postMessage({
+      type: 'SEND_TO_BACKGROUND',
+      callback: 'ECOLOGY_DETAIL_RESULT',
+      backgroundMessage: { type: 'FETCH_ECOLOGY_DETAIL', baseUrl, requestId }
+    }, '*');
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('流程详情请求超时'));
+    }, 15000);
+
+    const handler = (event) => {
+      if (event.data.type === 'ECOLOGY_DETAIL_RESULT') {
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        if (event.data.success) {
+          resolve(event.data.data);
+        } else {
+          reject(new Error(event.data.error || '详情获取失败'));
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+  });
+}
+
+/**
+ * AI预审单条待办
+ */
+async function preReviewTodo(idx) {
+  const item = _todo_items_cache[idx];
+  if (!item) return;
+  if (_prereview_in_progress.has(idx)) return;
+  _prereview_in_progress.add(idx);
+
+  const resultEl = document.getElementById(`preReviewResult${idx}`);
+  if (!resultEl) { _prereview_in_progress.delete(idx); return; }
+
+  resultEl.classList.remove('hidden');
+  resultEl.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正在智能预审...</div>';
 
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_WORKFLOW_DETAIL', requestId });
-    if (!response || !response.success) {
-      throw new Error(response?.error || '获取流程详情失败');
+    let detailContent = '';
+    const { ecologyUrl } = getTodoApiConfig();
+
+    // 尝试获取流程详情
+    if (item.requestId && ecologyUrl) {
+      try {
+        const detail = await fetchEcologyDetail(ecologyUrl, item.requestId);
+        detailContent = formatEcologyDetail(detail);
+      } catch (e) {
+        console.warn('[预审] 获取详情失败，使用基本信息:', e.message);
+      }
     }
 
-    const detail = response.data?.data || response.data || {};
-    const workflowName = detail.workflowName || detail.workflowname || '';
-    const requestName = detail.requestName || detail.requestname || title;
-    const creator = detail.creator || detail.creater || '';
-    const createdate = detail.createdate || detail.createDate || '';
-    const mainData = detail.mainData || detail.maindata || [];
-    const fieldList = Array.isArray(mainData)
-      ? mainData.map(f => `- ${f.fieldName || f.name || '未知字段'}: ${f.fieldValue || f.value || ''}`).join('\n')
-      : (typeof mainData === 'string' ? mainData : JSON.stringify(mainData, null, 2));
+    // 构建预审prompt
+    const todoInfo = [
+      `流程标题: ${item.title}`,
+      item.workflowName ? `流程类型: ${item.workflowName}` : '',
+      item.creator ? `发起人: ${item.creator}` : '',
+      item.createdate ? `创建时间: ${item.createdate}` : '',
+      item.nodename ? `当前节点: ${item.nodename}` : '',
+      detailContent ? `\n--- 流程详情 ---\n${detailContent}` : ''
+    ].filter(Boolean).join('\n');
 
-    const reviewPrompt = `请对以下OA审批流程进行智能预审分析：
+    const prompt = `你是零跑汽车OA流程审批助手。请对以下待办流程进行智能预审分析。
 
-**流程标题**: ${requestName}
-**流程类型**: ${workflowName}
-**发起人**: ${creator}
-**发起日期**: ${createdate}
+${todoInfo}
 
-**表单数据**:
-${fieldList}
+请按以下格式输出预审结果：
 
-请按以下格式分析：
+📋 **流程摘要**：一句话概括流程内容
+🏷️ **流程类型**：判断属于哪类（请假/报销/采购/用印/合同/人事/其他）
+✅ **审批建议**：同意/驳回/需补充信息
+⚠️ **风险提示**：如有异常或风险点请列出，无则写"无"
+📝 **关注要点**：审批时需重点关注的1-3个要点
 
-## 流程概述
-（简要说明该流程的用途和目的）
+请简洁输出，每项不超过2行。`;
 
-## 关键数据
-（提取表单中的关键金额、数量、时间等核心数据）
-
-## 风险提示
-（识别可能存在的风险点，如金额异常、时间冲突、数据缺失等。如无明显风险请标注"暂无明显风险"）
-
-## 预审建议
-（给出预审建议：建议通过 / 建议关注 / 建议驳回，并说明理由）`;
-
-    if (input) {
-      input.value = reviewPrompt;
-      sendMessage();
-    }
+    // 调用AI
+    const aiResponse = await callAPIForPreReview(prompt);
+    resultEl.innerHTML = `<div class="prereview-content">${formatPreReviewResult(aiResponse)}</div>`;
   } catch (err) {
-    console.error('[AI预审] ❌ 失败:', err);
-    if (input) {
-      input.value = `流程「${title}」预审失败：${err.message}。请确保已登录OA系统。`;
-      input.focus();
+    console.error('[预审] 失败:', err);
+    resultEl.innerHTML = `<div class="prereview-error">预审失败: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    _prereview_in_progress.delete(idx);
+  }
+}
+
+/**
+ * 批量AI预审
+ */
+async function batchPreReview() {
+  const batchBtn = document.getElementById('batchPreReviewBtn');
+  if (batchBtn) {
+    batchBtn.disabled = true;
+    batchBtn.innerHTML = '<div class="loading-spinner-sm"></div> 预审中...';
+  }
+
+  const items = _todo_items_cache.slice(0, 10);
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].requestId) {
+      await preReviewTodo(i);
     }
   }
+
+  if (batchBtn) {
+    batchBtn.disabled = false;
+    batchBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 全部AI预审`;
+  }
+}
+
+/**
+ * 调用AI API进行预审（非流式）
+ */
+async function callAPIForPreReview(prompt) {
+  if (!settings.apiUrl || !settings.apiKey || !settings.modelName) {
+    throw new Error('API配置不完整，请先在设置中配置模型');
+  }
+
+  const apiUrl = settings.apiUrl.replace(/\/$/, '');
+  const chatUrl = `${apiUrl}/v1/chat/completions`;
+
+  const response = await fetch(chatUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.apiKey}`
+    },
+    body: JSON.stringify({
+      model: settings.modelName,
+      messages: [{ role: 'user', content: prompt }],
+      stream: false,
+      temperature: 0.3,
+      max_tokens: 800
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`API错误: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/**
+ * 格式化泛微流程详情为文本
+ */
+function formatEcologyDetail(detail) {
+  if (!detail) return '';
+  const lines = [];
+
+  // 主表数据
+  if (detail.mainData) {
+    const main = detail.mainData;
+    if (Array.isArray(main)) {
+      main.forEach(f => {
+        if (f.name && f.value) lines.push(`${f.name}: ${f.value}`);
+      });
+    } else if (typeof main === 'object') {
+      Object.entries(main).forEach(([k, v]) => {
+        if (v && typeof v === 'string') lines.push(`${k}: ${v}`);
+      });
+    }
+  }
+
+  // 通用字段
+  if (detail.requestName) lines.push(`流程标题: ${detail.requestName}`);
+  if (detail.workflowName) lines.push(`流程类型: ${detail.workflowName}`);
+  if (detail.status) lines.push(`流程状态: ${detail.status}`);
+  if (detail.creater) lines.push(`发起人: ${detail.creater}`);
+  if (detail.createdate) lines.push(`创建时间: ${detail.createdate}`);
+  if (detail.currentNodeName) lines.push(`当前节点: ${detail.currentNodeName}`);
+
+  // 明细表数据
+  if (detail.detailData && Array.isArray(detail.detailData)) {
+    detail.detailData.forEach((table, idx) => {
+      if (table.records && Array.isArray(table.records)) {
+        lines.push(`\n--- 明细表${idx + 1} ---`);
+        table.records.forEach(rec => {
+          if (rec.fields && Array.isArray(rec.fields)) {
+            rec.fields.forEach(f => {
+              if (f.name && f.value) lines.push(`  ${f.name}: ${f.value}`);
+            });
+          }
+        });
+      }
+    });
+  }
+
+  // 审批历史
+  if (detail.logInfo && Array.isArray(detail.logInfo)) {
+    lines.push('\n--- 审批历史 ---');
+    detail.logInfo.forEach(log => {
+      const who = log.operator || log.userName || '';
+      const when = log.operateDate || log.date || '';
+      const what = log.operateType || log.remark || '';
+      if (who) lines.push(`  ${who} ${when} ${what}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * 格式化预审结果（简单markdown渲染）
+ */
+function formatPreReviewResult(text) {
+  if (!text) return '<span class="prereview-empty">无预审结果</span>';
+  // 简单处理：换行、加粗
+  let html = escapeHtml(text);
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
 }
 
 // ========== 工具函数 ==========
@@ -4551,28 +4802,6 @@ function initPasteHandler() {
 }
 
 // ========== 设置管理 ==========
-async function autoFetchEmployeeId() {
-  try {
-    console.log('[工号] 📡 尝试从E9自动获取工号...');
-    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_USER_INFO' });
-    if (response && response.success && response.data) {
-      const userInfo = response.data;
-      const loginId = userInfo.loginid || userInfo.workCode || userInfo.empNo || '';
-      if (loginId) {
-        employeeId = loginId;
-        localStorage.setItem('employeeId', loginId);
-        const input = document.getElementById('employeeId');
-        if (input) input.value = loginId;
-        console.log('[工号] ✅ 自动获取成功:', loginId);
-        return;
-      }
-    }
-    console.log('[工号] ⚠️ 未获取到工号信息，用户可手动填写');
-  } catch (err) {
-    console.log('[工号] ⚠️ 自动获取失败，用户可手动填写:', err.message);
-  }
-}
-
 function loadSettings() {
   const saved = localStorage.getItem('aiSettings');
   if (saved) {
@@ -4597,9 +4826,52 @@ function loadSettings() {
     employeeId = savedEmployeeId;
   }
 
-  // 自动获取员工工号（从E9 OA系统）
-  if (!savedEmployeeId) {
-    autoFetchEmployeeId();
+  // 加载OA系统类型和待办配置
+  const savedOaType = localStorage.getItem('oaSystemType') || 'custom';
+  const customRadio = document.querySelector('input[name="oaSystemType"][value="custom"]');
+  const ecologyRadio = document.querySelector('input[name="oaSystemType"][value="ecology"]');
+  if (customRadio && ecologyRadio) {
+    if (savedOaType === 'ecology') {
+      ecologyRadio.checked = true;
+      document.getElementById('customTodoConfig').classList.add('hidden');
+      document.getElementById('ecologyConfig').classList.remove('hidden');
+    } else {
+      customRadio.checked = true;
+    }
+    // 切换事件
+    document.querySelectorAll('input[name="oaSystemType"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const isEcology = e.target.value === 'ecology';
+        document.getElementById('customTodoConfig').classList.toggle('hidden', isEcology);
+        document.getElementById('ecologyConfig').classList.toggle('hidden', !isEcology);
+        localStorage.setItem('oaSystemType', e.target.value);
+      });
+    });
+  }
+
+  // 加载OA待办接口地址（首页"我的待办"）
+  const savedTodoApiUrl = localStorage.getItem('oaTodoApiUrl');
+  if (savedTodoApiUrl !== null && document.getElementById('oaTodoApiUrl')) {
+    document.getElementById('oaTodoApiUrl').value = savedTodoApiUrl;
+  }
+  // 待办接口地址变更即时保存（与工号输入一致体验）
+  const todoApiInput = document.getElementById('oaTodoApiUrl');
+  if (todoApiInput) {
+    todoApiInput.addEventListener('input', () => {
+      localStorage.setItem('oaTodoApiUrl', todoApiInput.value.trim());
+    });
+  }
+
+  // 加载泛微e-cology地址
+  const savedEcologyUrl = localStorage.getItem('ecologyBaseUrl');
+  if (savedEcologyUrl !== null && document.getElementById('ecologyBaseUrl')) {
+    document.getElementById('ecologyBaseUrl').value = savedEcologyUrl;
+  }
+  const ecologyInput = document.getElementById('ecologyBaseUrl');
+  if (ecologyInput) {
+    ecologyInput.addEventListener('input', () => {
+      localStorage.setItem('ecologyBaseUrl', ecologyInput.value.trim());
+    });
   }
 
   // 加载FastGPT设置
@@ -5149,17 +5421,6 @@ function init() {
   // 延迟检查API配置（等设置加载完）
   // 每次打开插件都会检查，有问题就弹出提示
   setTimeout(checkApiConfigAndShowWarning, 500);
-
-  // 绑定待办刷新按钮（初始欢迎页）+ 自动拉取待办
-  const todoRefreshBtnInit = document.getElementById('todoRefreshBtn');
-  if (todoRefreshBtnInit) {
-    todoRefreshBtnInit.addEventListener('click', () => {
-      todoRefreshBtnInit.classList.add('spinning');
-      _todo_fetching = false;
-      fetchTodoItems();
-    });
-  }
-  setTimeout(() => fetchTodoItems(), 800);
 
   // 初始化AI智能推荐问题（延迟执行以确保页面内容已加载）
   setTimeout(() => {

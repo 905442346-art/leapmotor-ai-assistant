@@ -305,8 +305,34 @@
 
           <div class="setting-group">
             <label>员工工号</label>
-            <input type="text" id="employeeId" value="" placeholder="登录OA后自动获取，也可手动输入"/>
-            <span class="field-hint">工号用于OA流程查询。打开OA页面后会自动获取，也可手动填写</span>
+            <input type="text" id="employeeId" value="" placeholder="请输入你的员工工号（如：E001234）"/>
+            <span class="field-hint">工号用于自动匹配OA审批流程，提问时会智能调用。仅保存在本地浏览器</span>
+          </div>
+
+          <div class="setting-group">
+            <label>OA系统类型</label>
+            <div class="oa-type-selector">
+              <label class="radio-option">
+                <input type="radio" name="oaSystemType" value="custom" checked/>
+                <span>自定义接口</span>
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="oaSystemType" value="ecology"/>
+                <span>泛微e-cology</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="customTodoConfig" class="setting-group">
+            <label>OA待办接口地址（可选）</label>
+            <input type="text" id="oaTodoApiUrl" value="" placeholder="https://lppms.leapmotor.com/pmapi/xxx/listTodo?number={employeeId}"/>
+            <span class="field-hint">配置后首页自动展示"我的待办"。{employeeId} 会自动替换为上方工号</span>
+          </div>
+
+          <div id="ecologyConfig" class="setting-group hidden">
+            <label>泛微e-cology系统地址</label>
+            <input type="text" id="ecologyBaseUrl" value="" placeholder="https://oa.leapmotor.com"/>
+            <span class="field-hint">配置后通过泛微标准接口自动获取待办。请确保已在浏览器中登录e-cology系统</span>
           </div>
 
           <div class="tab-footer-hint">
@@ -466,27 +492,6 @@
         <div class="brand-tag">LEAPMOTOR</div>
         <h2>零跑AI助手</h2>
         <p>智能分析当前页面 · 随时随地获取洞察</p>
-
-        <!-- 我的待办卡片 -->
-        <div id="todoCard" class="todo-card hidden">
-          <div class="todo-card-header">
-            <div class="todo-card-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 11l3 3L22 4"/>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-              </svg>
-              <span>我的待办</span>
-              <span id="todoBadge" class="todo-badge"></span>
-            </div>
-            <button id="todoRefreshBtn" class="todo-refresh-btn" title="刷新待办">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-            </button>
-          </div>
-          <div id="todoCardBody" class="todo-card-body"></div>
-        </div>
 
         <!-- AI智能推荐问题容器（首次打开时显示） -->
         <div id="smartSuggestionsContainer" class="smart-suggestions-container"></div>
