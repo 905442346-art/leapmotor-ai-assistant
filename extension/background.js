@@ -467,8 +467,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           });
           if (resp0.ok) {
             const data0 = await resp0.json();
-            console.log('[Background] doingBaseInfo响应keys:', Object.keys(data0));
+            console.log('[Background] doingBaseInfo完整响应keys:', Object.keys(data0));
+            // 打印conditioninfo（可能包含数据URL配置）
+            if (data0.conditioninfo) {
+              const ciStr = JSON.stringify(data0.conditioninfo);
+              console.log('[Background] conditioninfo前500字符:', ciStr.substring(0, 500));
+            }
+            if (data0.countcfg) {
+              console.log('[Background] countcfg:', JSON.stringify(data0.countcfg).substring(0, 300));
+            }
             treeData = data0.treedata || data0.treeData;
+            if (treeData) {
+              console.log('[Background] treedata前300字符:', JSON.stringify(treeData).substring(0, 300));
+            }
           }
         } catch (e) { console.warn('[Background] doingBaseInfo失败:', e.message); }
 
@@ -554,7 +565,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             { path: '/workflow/request/RequestListData.jsp', method: 'POST' },
             { path: '/RequestListData.jsp', method: 'POST' },
             { path: '/workflow/request/RequestListData.jsp', method: 'GET' },
-            { path: '/workflow/request/RequestList.jsp', method: 'POST' }
+            { path: '/workflow/request/RequestList.jsp', method: 'POST' },
+            { path: '/workflow/request/RequestList.jsp?method=getData', method: 'POST' },
+            { path: '/workflow/request/RequestList.jsp?method=getData', method: 'GET' },
+            { path: '/workflow/request/RequestList.jsp?action=getdata', method: 'POST' },
+            { path: '/workflow/request/RequestList.jsp?action=list', method: 'POST' }
           ];
           for (const { path: jp, method } of jspDataPaths) {
             if (items.length > 0) break;
@@ -565,7 +580,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               reqData.append('pageSize', '20');
               reqData.append('righttype', 'doing');
               const url = method === 'GET'
-                ? `${baseUrl}${jp}?${reqData.toString()}`
+                ? `${baseUrl}${jp}&${reqData.toString()}`
                 : `${baseUrl}${jp}`;
               const opts = { method, headers: ecHeaders, credentials: 'include' };
               if (method === 'POST') opts.body = reqData.toString();
@@ -593,6 +608,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               }
             } catch (e) { console.warn('[Background] JSP数据异常:', jp, e.message); }
           }
+        }
+
+        // 尝试从RequestList.jsp页面源码中提取API路径
+        if (items.length === 0) {
+          try {
+            const respPage = await fetch(`${baseUrl}/workflow/request/RequestList.jsp`, {
+              method: 'GET',
+              headers: { 'Accept': 'text/html,*/*' },
+              credentials: 'include'
+            });
+            const pageHtml = await respPage.text();
+            // 搜索JS中的API路径
+            const apiMatches = pageHtml.match(/["'](\/api\/[^"']*?(?:table|data|list|doing|request)[^"']*?)["']/gi);
+            if (apiMatches) {
+              console.log('[Background] RequestList.jsp中发现API路径:', [...new Set(apiMatches.map(m => m.replace(/["']/g, '')))].slice(0, 10));
+            }
+            // 搜索JS中的JSP路径
+            const jspMatches = pageHtml.match(/["'](\/[^"']*?\.jsp[^"']*?)["']/gi);
+            if (jspMatches) {
+              console.log('[Background] RequestList.jsp中发现JSP路径:', [...new Set(jspMatches.map(m => m.replace(/["']/g, '')))].slice(0, 10));
+            }
+            // 搜索JS文件路径
+            const jsFiles = pageHtml.match(/src=["']([^"']*\.js[^"']*)["']/gi);
+            if (jsFiles) {
+              console.log('[Background] RequestList.jsp加载的JS文件:', jsFiles.slice(0, 5));
+            }
+          } catch (e) { console.warn('[Background] 页面源码分析失败:', e.message); }
         }
 
         // 尝试更多reqlist下的端点
