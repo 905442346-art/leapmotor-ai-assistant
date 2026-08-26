@@ -1,47 +1,44 @@
 // ========== 右键菜单：选中文本AI操作 ==========
-// 从JSP HTML页面解析待办列表
+// 从JSP HTML页面解析待办列表（Service Worker兼容，无DOMParser）
 function parseJspTodoList(html) {
   const items = [];
   try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    // 尝试从表格行中提取
-    const rows = doc.querySelectorAll('tr[data-requestid], tr[requestid]');
-    rows.forEach(row => {
-      const requestId = row.getAttribute('data-requestid') || row.getAttribute('requestid') || '';
-      const title = row.querySelector('a')?.textContent?.trim() || row.textContent?.trim() || '待办事项';
-      const link = row.querySelector('a')?.getAttribute('href') || '';
-      items.push({ title, requestId, url: link, creator: '', workflowName: '', createdate: '' });
-    });
-    // 如果没有data-requestid，尝试从链接中提取
-    if (items.length === 0) {
-      const links = doc.querySelectorAll('a[href*="requestid"], a[href*="requestId"]');
-      links.forEach(link => {
-        const href = link.getAttribute('href') || '';
-        const match = href.match(/requestid=(\d+)/i);
-        if (match) {
-          items.push({
-            title: link.textContent?.trim() || '待办事项',
-            requestId: match[1],
-            url: href,
-            creator: '', workflowName: '', createdate: ''
-          });
-        }
+    // 提取 a 标签中的 requestid
+    const linkRegex = /<a[^>]*href=["']([^"']*requestid=(\d+)[^"']*)["'][^>]*>([^<]+)<\/a>/gi;
+    let match;
+    while ((match = linkRegex.exec(html)) !== null) {
+      items.push({
+        title: match[3]?.trim() || '待办事项',
+        requestId: match[2],
+        url: match[1],
+        creator: '', workflowName: '', createdate: ''
       });
     }
-    // 尝试从JSON嵌入数据中提取
+    // 提取行数据
     if (items.length === 0) {
-      const scripts = doc.querySelectorAll('script');
-      for (const script of scripts) {
-        const text = script.textContent || '';
-        if (text.includes('requestid') || text.includes('requestName')) {
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const data = JSON.parse(jsonMatch[0]);
-              const parsed = parseEcologyResponse(data);
-              items.push(...parsed);
-            } catch (e) {}
-          }
+      const rowRegex = /requestid["']?\s*[:=]\s*["']?(\d+)/gi;
+      while ((match = rowRegex.exec(html)) !== null) {
+        // 尝试找附近的标题
+        const nearby = html.substring(Math.max(0, match.index - 200), match.index + 200);
+        const titleMatch = nearby.match(/requestname["']?\s*[:=]\s*["']([^"']+)["']/i);
+        items.push({
+          title: titleMatch ? titleMatch[1] : '待办事项',
+          requestId: match[1],
+          url: '',
+          creator: '', workflowName: '', createdate: ''
+        });
+      }
+    }
+    // 提取嵌入JSON
+    if (items.length === 0) {
+      const jsonMatches = html.match(/\{[^{}]*"requestid"[^{}]*\}/gi);
+      if (jsonMatches) {
+        for (const jsonStr of jsonMatches) {
+          try {
+            const data = JSON.parse(jsonStr);
+            const parsed = parseEcologyResponse(data);
+            items.push(...parsed);
+          } catch (e) {}
         }
       }
     }
@@ -540,7 +537,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               credentials: 'include'
             });
             const jspText = await respJsp.text();
-            console.log(`[Background] JSP ${jspPath}: HTTP ${respJsp.status}, 前300字符:`, jspText.substring(0, 300));
+            console.log(`[Background] JSP ${jspPath}: HTTP ${respJsp.status}, 前500字符:`, jspText.substring(0, 500));
             if (respJsp.ok && (jspText.includes('requestid') || jspText.includes('requestname') || jspText.includes('requestName'))) {
               items = parseJspTodoList(jspText);
               if (items.length > 0) {
@@ -549,6 +546,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               }
             }
           } catch (e) { console.warn('[Background] JSP接口异常:', jspPath, e.message); }
+        }
+
+        // 尝试旧版JSP数据端点（返回JSON）
+        if (items.length === 0) {
+          const jspDataPaths = [
+            { path: '/workflow/request/RequestListData.jsp', method: 'POST' },
+            { path: '/RequestListData.jsp', method: 'POST' },
+            { path: '/workflow/request/RequestListData.jsp', method: 'GET' },
+            { path: '/workflow/request/RequestList.jsp', method: 'POST' }
+          ];
+          for (const { path: jp, method } of jspDataPaths) {
+            if (items.length > 0) break;
+            try {
+              const reqData = new URLSearchParams();
+              reqData.append('sessionkey', sessionkey);
+              reqData.append('pageNo', '1');
+              reqData.append('pageSize', '20');
+              reqData.append('righttype', 'doing');
+              const url = method === 'GET'
+                ? `${baseUrl}${jp}?${reqData.toString()}`
+                : `${baseUrl}${jp}`;
+              const opts = { method, headers: ecHeaders, credentials: 'include' };
+              if (method === 'POST') opts.body = reqData.toString();
+              const respJd = await fetch(url, opts);
+              const jdText = await respJd.text();
+              console.log(`[Background] JSP数据 ${jp}(${method}): HTTP ${respJd.status}, 前500字符:`, jdText.substring(0, 500));
+              if (respJd.ok) {
+                try {
+                  const jdData = JSON.parse(jdText);
+                  items = parseEcologyResponse(jdData);
+                  if (items.length > 0) {
+                    total = jdData.total || jdData.totalCount || items.length;
+                    console.log('[Background] ✅ 泛微待办(JSP数据):', items.length, 'via', jp);
+                  }
+                } catch (e) {
+                  // 不是JSON，尝试HTML解析
+                  if (jdText.includes('requestid') || jdText.includes('requestname')) {
+                    items = parseJspTodoList(jdText);
+                    if (items.length > 0) {
+                      total = items.length;
+                      console.log('[Background] ✅ 泛微待办(JSP-HTML):', items.length, 'via', jp);
+                    }
+                  }
+                }
+              }
+            } catch (e) { console.warn('[Background] JSP数据异常:', jp, e.message); }
+          }
         }
 
         // 尝试更多reqlist下的端点
