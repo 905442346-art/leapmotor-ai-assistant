@@ -416,59 +416,126 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log(`[Background] 找到OA标签页: ${oaTab.url}`);
 
         const results = await chrome.scripting.executeScript({
-          target: { tabId: oaTab.id },
+          target: { tabId: oaTab.id, allFrames: true },
           func: () => {
-            // 尝试多种选择器提取待办项
             const items = [];
 
-            // E-cology 标准待办列表选择器
-            const selectors = [
-              '.workflow-item',
-              '.todo-item',
-              '[data-requestid]',
-              '.req-list-item',
-              'tr[data-requestid]',
-              '.wea-new-idx-content .wea-url',
-              '.list-item[data-id]'
+            // 方案A: 查找所有包含 requestid 的链接
+            const reqLinks = document.querySelectorAll('a[href*="requestid"], a[href*="requestId"], a[href*="workflowid"], a[href*="workflowId"]');
+            reqLinks.forEach(link => {
+              const title = link.textContent?.trim() || link.title || '';
+              const url = link.href || '';
+              const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
+              const requestId = match ? match[1] : '';
+              if (title && title.length > 2) {
+                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+              }
+            });
+
+            if (items.length > 0) return items;
+
+            // 方案B: 查找表格行（Ant Design / Element UI / 自定义）
+            const tableSelectors = [
+              '.ant-table-tbody > tr',
+              '.el-table__row',
+              '.wea-new-idx-content table tbody tr',
+              '.wea-table-tbody > tr',
+              '.req-list-table tbody tr',
+              'table.workflow-list tbody tr',
+              '[role="row"]',
+              'tbody tr'
             ];
 
-            for (const sel of selectors) {
-              const els = document.querySelectorAll(sel);
-              els.forEach(el => {
-                const title = el.textContent?.trim() || '';
-                const url = el.getAttribute('data-url') || el.getAttribute('href') || el.querySelector('a')?.href || '';
-                const requestId = el.getAttribute('data-requestid') || el.getAttribute('data-id') || '';
-                if (title && title.length > 2) {
-                  items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+            for (const sel of tableSelectors) {
+              const rows = document.querySelectorAll(sel);
+              if (rows.length === 0) continue;
+              console.log(`[DOM提取] 尝试选择器: ${sel}, 找到 ${rows.length} 行`);
+
+              rows.forEach(row => {
+                // 尝试获取行内链接
+                const link = row.querySelector('a[href]');
+                const title = link?.textContent?.trim() || row.querySelector('td')?.textContent?.trim() || '';
+                const url = link?.href || '';
+                const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
+                const requestId = match ? match[1] : '';
+
+                // 尝试提取其他字段
+                const cells = row.querySelectorAll('td');
+                let creater = '', createdate = '', nodename = '';
+                if (cells.length >= 2) creater = cells[1]?.textContent?.trim() || '';
+                if (cells.length >= 3) createdate = cells[2]?.textContent?.trim() || '';
+                if (cells.length >= 4) nodename = cells[3]?.textContent?.trim() || '';
+
+                if (title && title.length > 2 && !title.includes('暂无数据') && !title.includes('No data')) {
+                  items.push({ title, url, requestId, workflowname: '', nodename, creater, createdate });
                 }
               });
+
               if (items.length > 0) break;
             }
 
-            // 如果没有找到，尝试从链接提取
-            if (items.length === 0) {
-              const links = document.querySelectorAll('a[href*="requestid"], a[href*="workflowId"]');
-              links.forEach(link => {
-                const title = link.textContent?.trim() || '';
-                const url = link.href || '';
-                const match = url.match(/requestid=(\d+)/i);
-                const requestId = match ? match[1] : '';
-                if (title && title.length > 2) {
-                  items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
-                }
-              });
-            }
+            if (items.length > 0) return items;
 
-            return items;
+            // 方案C: 查找所有包含流程标题的点击元素
+            const clickables = document.querySelectorAll('[class*="workflow"], [class*="request"], [class*="todo"]');
+            clickables.forEach(el => {
+              const title = el.textContent?.trim() || '';
+              const link = el.querySelector('a[href]') || el.closest('a[href]');
+              const url = link?.href || '';
+              const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
+              const requestId = match ? match[1] : '';
+              if (title && title.length > 4 && title.length < 200 && !title.includes('暂无数据')) {
+                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+              }
+            });
+            if (items.length > 0) return items;
+
+            // 方案D: 获取页面所有链接，过滤可能的流程链接
+            const allLinks = document.querySelectorAll('a[href]');
+            allLinks.forEach(link => {
+              const title = link.textContent?.trim() || '';
+              const url = link.href || '';
+              if (title.length > 4 && title.length < 200 &&
+                  (url.includes('requestid') || url.includes('workflowId') || url.includes('workflowid') ||
+                   url.includes('processDetail') || url.includes('formDetail'))) {
+                const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i) || url.match(/\/request\/(\d+)/i);
+                const requestId = match ? match[1] : '';
+                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+              }
+            });
+
+            if (items.length > 0) return items;
+
+            // 方案E: 最后兜底 - 收集页面DOM信息用于调试
+            const bodyText = document.body?.innerText?.substring(0, 3000) || '';
+            const allHrefs = Array.from(document.querySelectorAll('a[href]')).map(a => ({text: a.textContent?.trim()?.substring(0, 50), href: a.href})).filter(a => a.text.length > 0).slice(0, 30);
+            const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({src: f.src, id: f.id, name: f.name}));
+            return { _debug: true, bodyTextPreview: bodyText.substring(0, 500), sampleLinks: allHrefs, iframes, title: document.title, url: location.href };
           }
         });
 
-        const todoItems = results?.[0]?.result || [];
-        console.log(`[Background] DOM提取到 ${todoItems.length} 条待办`);
+        // 合并所有 frame 的结果
+        let todoItems = [];
+        let debugInfo = null;
+        for (const r of results) {
+          if (Array.isArray(r.result) && r.result.length > 0) {
+            todoItems = todoItems.concat(r.result);
+          } else if (r.result && r.result._debug && !debugInfo) {
+            debugInfo = r.result;
+          }
+        }
+
         if (todoItems.length > 0) {
+          console.log(`[Background] DOM提取到 ${todoItems.length} 条待办`);
           sendResponse({ success: true, data: todoItems });
         } else {
-          sendResponse({ success: false, error: 'OA页面未找到待办列表，请确保已打开待办页面' });
+          if (debugInfo) {
+            console.log('[Background] DOM调试信息:', debugInfo);
+            const iframeInfo = debugInfo.iframes?.length > 0 ? `，发现 ${debugInfo.iframes.length} 个iframe: ${debugInfo.iframes.map(f => f.src?.substring(0, 80)).join(', ')}` : '';
+            sendResponse({ success: false, error: `页面「${debugInfo.title}」未匹配到待办数据${iframeInfo}` });
+          } else {
+            sendResponse({ success: false, error: 'OA页面未找到待办列表，请确保已打开待办页面' });
+          }
         }
       } catch (domErr) {
         console.error('[Background] DOM提取失败:', domErr.message);
