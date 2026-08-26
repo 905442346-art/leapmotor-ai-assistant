@@ -1,27 +1,68 @@
 // ========== 右键菜单：选中文本AI操作 ==========
-// 泛微e-cology响应解析：归一化各种返回结构为统一数组
+// 泛微e-cology响应解析：递归查找数组并归一化为统一结构
 function parseEcologyResponse(data) {
   if (!data) return [];
-  let arr = data;
-  if (!Array.isArray(arr)) {
-    arr = data.data || data.list || data.rows || data.result || data.records || data.datas;
-    if (arr && !Array.isArray(arr)) {
-      arr = arr.list || arr.records || arr.rows || arr.data || arr.datas || [];
+  let arr = null;
+
+  // 尝试直接数组
+  if (Array.isArray(data)) {
+    arr = data;
+  } else if (typeof data === 'object') {
+    // 尝试常见的顶层字段
+    for (const key of ['data', 'list', 'rows', 'result', 'records', 'datas', 'items', 'workflowList']) {
+      if (Array.isArray(data[key])) { arr = data[key]; break; }
+    }
+    // 尝试嵌套 data.xxx
+    if (!arr && data.data && typeof data.data === 'object') {
+      for (const key of ['data', 'list', 'rows', 'result', 'records', 'datas', 'items', 'workflowList']) {
+        if (Array.isArray(data.data[key])) { arr = data.data[key]; break; }
+      }
+    }
+    // 尝试 result.xxx
+    if (!arr && data.result && typeof data.result === 'object') {
+      for (const key of ['data', 'list', 'rows', 'records', 'datas', 'items']) {
+        if (Array.isArray(data.result[key])) { arr = data.result[key]; break; }
+      }
+    }
+    // 深度搜索：找到第一个包含 requestname/requestid 的数组
+    if (!arr) {
+      arr = deepFindTodoArray(data, 0);
     }
   }
-  if (!Array.isArray(arr)) return [];
+
+  if (!arr || !Array.isArray(arr)) return [];
   return arr.map(it => {
     if (typeof it === 'string') return { title: it, url: '', requestId: '' };
-    const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '待办事项';
-    const requestId = it.requestid || it.requestId || it.id || '';
-    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl ||
-      (requestId ? '' : '');
-    const creator = it.creatname || it.creator || it.createrName || it.nodename || '';
-    const workflowName = it.workflowname || it.workflowName || it.flowType || '';
-    const createdate = it.createdate || it.createDate || it.createtime || '';
-    const nodename = it.nodename || it.nodeName || it.currentnode || '';
+    if (typeof it !== 'object') return { title: String(it), url: '', requestId: '' };
+    const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || it.flowName || '待办事项';
+    const requestId = it.requestid || it.requestId || it.id || it.flowid || it.flowId || '';
+    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || it.pcUrl || '';
+    const creator = it.creatname || it.creator || it.createrName || it.creater || it.createName || '';
+    const workflowName = it.workflowname || it.workflowName || it.flowType || it.workflowtype || '';
+    const createdate = it.createdate || it.createDate || it.createtime || it.createTime || '';
+    const nodename = it.nodename || it.nodeName || it.currentnode || it.currentNode || '';
     return { title, url, requestId, creator, workflowName, createdate, nodename, raw: it };
   }).filter(it => it.title && it.title !== '待办事项');
+}
+
+// 递归查找包含待办特征的数组（最多3层）
+function deepFindTodoArray(obj, depth) {
+  if (depth > 3 || !obj || typeof obj !== 'object') return null;
+  if (Array.isArray(obj)) {
+    // 检查数组元素是否包含待办特征字段
+    if (obj.length > 0 && typeof obj[0] === 'object') {
+      const keys = Object.keys(obj[0]).join('').toLowerCase();
+      if (keys.includes('request') || keys.includes('title') || keys.includes('flow') || keys.includes('workflow')) {
+        return obj;
+      }
+    }
+    return null;
+  }
+  for (const key of Object.keys(obj)) {
+    const found = deepFindTodoArray(obj[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -360,6 +401,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         console.log('[Background] 📡 泛微e-cology待办查询:', baseUrl);
 
+        const ecHeaders = {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': '*/*'
+        };
+
+        // Step0: 先调doingBaseInfo验证连通性
+        let treeData = null;
+        try {
+          const baseForm = new URLSearchParams();
+          baseForm.append('actiontype', 'baseinfo');
+          baseForm.append('viewScope', 'doing');
+          const resp0 = await fetch(`${baseUrl}/api/workflow/reqlist/doingBaseInfo`, {
+            method: 'POST', headers: ecHeaders, body: baseForm.toString(), credentials: 'include'
+          });
+          if (resp0.ok) {
+            const data0 = await resp0.json();
+            console.log('[Background] doingBaseInfo响应keys:', Object.keys(data0));
+            treeData = data0.treedata || data0.treeData;
+          }
+        } catch (e) { console.warn('[Background] doingBaseInfo失败:', e.message); }
+
         // Step1: 获取splitPageKey（sessionkey）
         const formData = new URLSearchParams();
         formData.append('actiontype', 'splitpage');
@@ -370,20 +433,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         const resp1 = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'X-Requested-with': 'XMLHttpRequest',
-            'Accept': '*/*'
-          },
+          headers: ecHeaders,
           body: formData.toString(),
           credentials: 'include'
         });
 
         if (!resp1.ok) throw new Error(`splitPageKey HTTP ${resp1.status}`);
-        const data1 = await resp1.json();
-        console.log('[Background] splitPageKey响应:', JSON.stringify(data1).substring(0, 200));
+        const respText1 = await resp1.text();
+        console.log('[Background] splitPageKey原始响应(前500字符):', respText1.substring(0, 500));
 
-        const sessionkey = data1.sessionkey || data1.sessionKey;
+        let data1;
+        try { data1 = JSON.parse(respText1); } catch (e) {
+          throw new Error('splitPageKey返回非JSON格式（可能未登录或被重定向）');
+        }
+
+        // 尝试从多种结构中提取sessionkey
+        const sessionkey = data1.sessionkey || data1.sessionKey || data1.data?.sessionkey || data1.data?.sessionKey;
+        console.log('[Background] sessionkey:', sessionkey ? '✓获取到' : '✗未获取到');
+
         if (!sessionkey) {
           // 某些版本直接返回列表数据
           const items = parseEcologyResponse(data1);
@@ -392,44 +459,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: true, data: { items, total: items.length } });
             return;
           }
-          throw new Error('未获取到sessionkey或列表数据');
+          // 如果有treeData说明API连通但没有待办
+          if (treeData) {
+            sendResponse({ success: false, error: 'API连通但未获取到待办数据（sessionkey为空）。请检查是否有待办事项' });
+            return;
+          }
+          throw new Error('未获取到sessionkey，且无直接列表数据');
         }
 
         // Step2: 用sessionkey获取实际列表数据
         let items = [];
         let total = 0;
 
-        // 尝试多个可能的列表数据接口
         const tableEndpoints = [
-          '/api/workflow/reqlist/getTableDataList',
-          '/api/ec/dev/table/getTableData',
-          '/api/workflow/reqlist/getDoingList'
+          { path: '/api/workflow/reqlist/getTableDataList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
+          { path: '/api/ec/dev/table/getTableDataList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
+          { path: '/api/ec/dev/table/getTableData', params: { sessionkey, pageNo: '1', pageSize: '20' } },
+          { path: '/api/workflow/reqlist/getDoingList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
+          { path: '/api/workflow/reqlist/getTableData', params: { sessionkey, pageNo: '1', pageSize: '20' } }
         ];
 
-        for (const ep of tableEndpoints) {
+        for (const { path: ep, params } of tableEndpoints) {
           try {
             const reqData = new URLSearchParams();
-            reqData.append('sessionkey', sessionkey);
-            reqData.append('pageNo', '1');
-            reqData.append('pageSize', '20');
+            Object.entries(params).forEach(([k, v]) => reqData.append(k, v));
 
             const resp2 = await fetch(`${baseUrl}${ep}`, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-with': 'XMLHttpRequest',
-                'Accept': '*/*'
-              },
+              headers: ecHeaders,
               body: reqData.toString(),
               credentials: 'include'
             });
 
             if (resp2.ok) {
-              const data2 = await resp2.json();
-              console.log('[Background] 列表接口响应:', ep, JSON.stringify(data2).substring(0, 300));
+              const respText2 = await resp2.text();
+              let data2;
+              try { data2 = JSON.parse(respText2); } catch (e) { continue; }
+              console.log('[Background] 列表接口', ep, 'keys:', Object.keys(data2), '前200字符:', respText2.substring(0, 200));
               items = parseEcologyResponse(data2);
               if (items.length > 0) {
-                total = data2.total || data2.totalCount || items.length;
+                total = data2.total || data2.totalCount || data2.data?.total || items.length;
                 console.log('[Background] ✅ 泛微待办列表:', items.length, 'via', ep);
                 break;
               }
@@ -439,38 +508,64 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         }
 
+        // Step3: 如果仍未获取到，尝试移动端和集成接口
         if (items.length === 0) {
-          // 最后尝试getToDoRequest接口
-          try {
-            const reqData3 = new URLSearchParams();
-            reqData3.append('userId', empId);
-            reqData3.append('pageNo', '1');
-            reqData3.append('pageSize', '20');
+          const altEndpoints = [
+            { path: '/api/workflow/mobile/getTodoList', method: 'GET', params: { pageNo: '1', pageSize: '20' } },
+            { path: '/api/workflow/getToDoRequest', method: 'POST', params: { userId: empId, pageNo: '1', pageSize: '20' } },
+            { path: '/api/integration/workflow/getTodoList', method: 'GET', params: { userId: empId, pageNo: '1', pageSize: '20' } }
+          ];
 
-            const resp3 = await fetch(`${baseUrl}/api/workflow/getToDoRequest`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'X-Requested-with': 'XMLHttpRequest',
-                'Accept': '*/*'
-              },
-              body: reqData3.toString(),
-              credentials: 'include'
-            });
-
-            if (resp3.ok) {
-              const data3 = await resp3.json();
-              console.log('[Background] getToDoRequest响应:', JSON.stringify(data3).substring(0, 300));
-              items = parseEcologyResponse(data3);
-              total = items.length;
+          for (const { path: ep, method, params } of altEndpoints) {
+            try {
+              const url = method === 'GET'
+                ? `${baseUrl}${ep}?${new URLSearchParams(params)}`
+                : `${baseUrl}${ep}`;
+              const opts = { method, headers: ecHeaders, credentials: 'include' };
+              if (method === 'POST') {
+                const reqData = new URLSearchParams();
+                Object.entries(params).forEach(([k, v]) => reqData.append(k, v));
+                opts.body = reqData.toString();
+              }
+              const resp3 = await fetch(url, opts);
+              if (resp3.ok) {
+                const respText3 = await resp3.text();
+                let data3;
+                try { data3 = JSON.parse(respText3); } catch (e) { continue; }
+                console.log('[Background] 备选接口', ep, '响应前200字符:', respText3.substring(0, 200));
+                items = parseEcologyResponse(data3);
+                if (items.length > 0) {
+                  total = items.length;
+                  console.log('[Background] ✅ 泛微待办(备选):', items.length, 'via', ep);
+                  break;
+                }
+              }
+            } catch (e) {
+              console.warn('[Background] 备选接口失败:', ep, e.message);
             }
-          } catch (e) {
-            console.warn('[Background] getToDoRequest失败:', e.message);
           }
         }
 
         if (items.length === 0) {
-          sendResponse({ success: false, error: '已登录但未获取到待办数据，可能需要检查e-cology版本或权限' });
+          // 尝试从doingCountInfo获取数量
+          let countInfo = '';
+          try {
+            const countForm = new URLSearchParams();
+            countForm.append('actiontype', 'countinfo');
+            countForm.append('viewScope', 'doing');
+            const respC = await fetch(`${baseUrl}/api/workflow/reqlist/doingCountInfo`, {
+              method: 'POST', headers: ecHeaders, body: countForm.toString(), credentials: 'include'
+            });
+            if (respC.ok) {
+              const dataC = await respC.json();
+              const tc = dataC.totalcount || dataC.totalCount || {};
+              const doing = tc.flowDoing || tc.flowAll || '0';
+              console.log('[Background] doingCountInfo待办数:', doing);
+              countInfo = `（系统显示待办数: ${doing}）`;
+            }
+          } catch (e) { console.warn('[Background] doingCountInfo失败:', e.message); }
+
+          sendResponse({ success: false, error: `已登录但未获取到待办列表数据${countInfo}。可能e-cology版本接口不兼容，请联系开发人员查看控制台日志` });
         } else {
           sendResponse({ success: true, data: { items, total } });
         }
