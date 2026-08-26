@@ -11,6 +11,7 @@ let employeeId = ''; // 员工工号（OA流程查询用）
 let uploadedFiles = [];
 let capturedPages = [];
 let activePageId = 'current';
+let currentTabUrl = '';
 let selectedTabIds = new Set();
 // leaprag 配置 - 预配置协同办公工作流，用户可自定义添加
 const FASTGPT_CONFIG = {
@@ -390,6 +391,7 @@ function loadCurrentPageInfo() {
 
 function updateCurrentPageInfo(tabInfo) {
   if (!tabInfo) return;
+  currentTabUrl = tabInfo.url || '';
   const titleEl = document.getElementById('currentPageTitle');
   if (titleEl && activePageId === 'current') {
     titleEl.textContent = tabInfo.title || '当前页面';
@@ -463,9 +465,16 @@ async function loadTabPickerList() {
     return;
   }
 
+  // 过滤掉当前活动标签页和已抓取页面
+  const availableTabs = handler.filter(tab => !tab.active && tab.url !== currentTabUrl);
+  if (availableTabs.length === 0) {
+    listEl.innerHTML = '<div class="tab-picker-loading">没有其他可抓取的标签页</div>';
+    return;
+  }
+
   const capturedUrls = new Set(capturedPages.map(p => p.url));
   let html = '';
-  handler.forEach(tab => {
+  availableTabs.forEach(tab => {
     let domain = '';
     try { domain = new URL(tab.url).hostname.replace('www.', ''); } catch(e) {}
     const favicon = tab.favIconUrl
