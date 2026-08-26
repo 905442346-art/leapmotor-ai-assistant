@@ -5690,12 +5690,16 @@ function init() {
   const floatBtn = document.getElementById('floatMoreBtn');
   const floatMenu = document.getElementById('floatMoreMenu');
 
-  // 恢复位置
+  // 恢复位置（带边界检查，防止按钮跑到屏幕外）
   try {
     const savedPos = JSON.parse(localStorage.getItem('floatMorePos') || 'null');
     if (savedPos && floatBtn) {
-      floatBtn.style.left = savedPos.x + 'px';
-      floatBtn.style.top = savedPos.y + 'px';
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const clampedX = Math.max(4, Math.min(w - 36, savedPos.x));
+      const clampedY = Math.max(4, Math.min(h - 36, savedPos.y));
+      floatBtn.style.left = clampedX + 'px';
+      floatBtn.style.top = clampedY + 'px';
       floatBtn.style.right = 'auto';
       floatBtn.style.bottom = 'auto';
     }
