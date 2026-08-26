@@ -1,4 +1,56 @@
 // ========== 右键菜单：选中文本AI操作 ==========
+// 从JSP HTML页面解析待办列表
+function parseJspTodoList(html) {
+  const items = [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // 尝试从表格行中提取
+    const rows = doc.querySelectorAll('tr[data-requestid], tr[requestid]');
+    rows.forEach(row => {
+      const requestId = row.getAttribute('data-requestid') || row.getAttribute('requestid') || '';
+      const title = row.querySelector('a')?.textContent?.trim() || row.textContent?.trim() || '待办事项';
+      const link = row.querySelector('a')?.getAttribute('href') || '';
+      items.push({ title, requestId, url: link, creator: '', workflowName: '', createdate: '' });
+    });
+    // 如果没有data-requestid，尝试从链接中提取
+    if (items.length === 0) {
+      const links = doc.querySelectorAll('a[href*="requestid"], a[href*="requestId"]');
+      links.forEach(link => {
+        const href = link.getAttribute('href') || '';
+        const match = href.match(/requestid=(\d+)/i);
+        if (match) {
+          items.push({
+            title: link.textContent?.trim() || '待办事项',
+            requestId: match[1],
+            url: href,
+            creator: '', workflowName: '', createdate: ''
+          });
+        }
+      });
+    }
+    // 尝试从JSON嵌入数据中提取
+    if (items.length === 0) {
+      const scripts = doc.querySelectorAll('script');
+      for (const script of scripts) {
+        const text = script.textContent || '';
+        if (text.includes('requestid') || text.includes('requestName')) {
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              const data = JSON.parse(jsonMatch[0]);
+              const parsed = parseEcologyResponse(data);
+              items.push(...parsed);
+            } catch (e) {}
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Background] JSP解析失败:', e.message);
+  }
+  return items;
+}
+
 // 泛微e-cology响应解析：递归查找数组并归一化为统一结构
 function parseEcologyResponse(data) {
   if (!data) return [];
@@ -450,15 +502,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // 尝试从多种结构中提取sessionkey
         const sessionkey = data1.sessionkey || data1.sessionKey || data1.data?.sessionkey || data1.data?.sessionKey;
         console.log('[Background] sessionkey:', sessionkey ? '✓获取到' : '✗未获取到');
+        console.log('[Background] splitPageKey完整keys:', Object.keys(data1).join(', '));
+
+        // 即使有sessionkey，也先检查响应本身是否包含列表数据
+        let items = parseEcologyResponse(data1);
+        if (items.length > 0) {
+          console.log('[Background] ✅ 泛微待办(splitPageKey直返):', items.length);
+          sendResponse({ success: true, data: { items, total: items.length } });
+          return;
+        }
 
         if (!sessionkey) {
-          // 某些版本直接返回列表数据
-          const items = parseEcologyResponse(data1);
-          if (items.length > 0) {
-            console.log('[Background] ✅ 泛微待办(splitPageKey直返):', items.length);
-            sendResponse({ success: true, data: { items, total: items.length } });
-            return;
-          }
           // 如果有treeData说明API连通但没有待办
           if (treeData) {
             sendResponse({ success: false, error: 'API连通但未获取到待办数据（sessionkey为空）。请检查是否有待办事项' });
@@ -468,8 +522,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         // Step2: 用sessionkey获取实际列表数据
-        let items = [];
+        items = [];
         let total = 0;
+
+        // 尝试JSP旧式接口（不受API版本影响）
+        const jspPaths = [
+          '/requestControl/requestList.jsp?righttype=doing&subrighttype=0&pagesize=20&pageno=1',
+          '/workflow/request/RequestList.jsp?status=doing&pagesize=20&pageno=1',
+          '/request/requestList.jsp?righttype=doing&pagesize=20&pageno=1'
+        ];
+        for (const jspPath of jspPaths) {
+          if (items.length > 0) break;
+          try {
+            const respJsp = await fetch(`${baseUrl}${jspPath}`, {
+              method: 'GET',
+              headers: { 'Accept': 'text/html,*/*', 'X-Requested-With': 'XMLHttpRequest' },
+              credentials: 'include'
+            });
+            const jspText = await respJsp.text();
+            console.log(`[Background] JSP ${jspPath}: HTTP ${respJsp.status}, 前300字符:`, jspText.substring(0, 300));
+            if (respJsp.ok && (jspText.includes('requestid') || jspText.includes('requestname') || jspText.includes('requestName'))) {
+              items = parseJspTodoList(jspText);
+              if (items.length > 0) {
+                total = items.length;
+                console.log('[Background] ✅ 泛微待办(JSP):', items.length);
+              }
+            }
+          } catch (e) { console.warn('[Background] JSP接口异常:', jspPath, e.message); }
+        }
+
+        // 尝试更多reqlist下的端点
+        if (items.length === 0) {
 
         const tableEndpoints = [
           '/api/workflow/reqlist/getTableDataList',
@@ -478,7 +561,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           '/api/workflow/reqlist/getDoingList',
           '/api/workflow/reqlist/getTableData',
           '/api/workflow/reqlist/splitPageList',
-          '/api/workflow/reqlist/getListData'
+          '/api/workflow/reqlist/getListData',
+          '/api/workflow/reqlist/doingListData',
+          '/api/workflow/reqlist/getDoingData',
+          '/api/workflow/center/getDoingList',
+          '/api/workflow/center/getTodoList'
         ];
 
         for (const ep of tableEndpoints) {
@@ -516,6 +603,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.warn('[Background] 列表接口异常:', ep, e.message);
           }
         }
+
+        } // end if (items.length === 0)
 
         // Step3: 如果仍未获取到，尝试移动端和集成接口
         if (items.length === 0) {
