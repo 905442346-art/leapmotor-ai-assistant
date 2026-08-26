@@ -397,6 +397,27 @@ body {
 
 .page-remove:hover { background: var(--error); color: white; }
 
+.page-toggle-btn {
+  width: 22px; height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  transition: all 0.2s;
+  flex-shrink: 0;
+  padding: 0;
+}
+.page-toggle-btn svg { width: 14px; height: 14px; }
+.page-toggle-btn:hover { background: var(--accent-glow); }
+.page-item.page-excluded { opacity: 0.45; }
+.page-item.page-excluded .page-title { text-decoration: line-through; }
+.page-item.page-excluded .page-toggle-btn { color: var(--text-tertiary); }
+.page-item.page-excluded .page-toggle-btn:hover { background: var(--accent-glow); color: var(--accent); }
+
 .add-page-btn {
   width: 28px; height: 28px;
   border: 1px dashed var(--glass-border-bright);
@@ -545,6 +566,15 @@ body {
 .tab-picker-item.already-captured:hover .tab-item-badge {
   background: rgba(255,69,58,0.15);
   color: #FF453A;
+}
+.tab-item-badge.current-badge {
+  background: rgba(0,122,255,0.12);
+  color: #007AFF;
+}
+.tab-picker-item.current-tab {
+  pointer-events: none;
+  opacity: 0.85;
+  border: 1px solid rgba(0,122,255,0.3);
 }
 
 .tab-item-checkbox {

@@ -12,6 +12,8 @@ let uploadedFiles = [];
 let capturedPages = [];
 let activePageId = 'current';
 let currentTabUrl = '';
+let currentTabTitle = '';
+let currentPageExcluded = false;
 let selectedTabIds = new Set();
 // leaprag 配置 - 预配置协同办公工作流，用户可自定义添加
 const FASTGPT_CONFIG = {
@@ -363,9 +365,19 @@ function initPageContext() {
     addPageBtn.addEventListener('click', openTabPicker);
   }
   document.getElementById('pageList').addEventListener('click', (e) => {
-    if (e.target.classList.contains('page-remove')) {
+    const toggleBtn = e.target.closest('.page-toggle-btn');
+    if (toggleBtn) {
       e.stopPropagation();
-      const pageId = e.target.dataset.pageId;
+      if (toggleBtn.dataset.action === 'toggle-current') {
+        currentPageExcluded = !currentPageExcluded;
+        renderPageList();
+      }
+      return;
+    }
+    const removeBtn = e.target.closest('.page-remove');
+    if (removeBtn) {
+      e.stopPropagation();
+      const pageId = removeBtn.dataset.pageId;
       removePage(pageId);
     } else if (e.target.closest('.page-item')) {
       const item = e.target.closest('.page-item');
@@ -392,9 +404,10 @@ function loadCurrentPageInfo() {
 function updateCurrentPageInfo(tabInfo) {
   if (!tabInfo) return;
   currentTabUrl = tabInfo.url || '';
+  currentTabTitle = tabInfo.title || '当前页面';
   const titleEl = document.getElementById('currentPageTitle');
   if (titleEl && activePageId === 'current') {
-    titleEl.textContent = tabInfo.title || '当前页面';
+    titleEl.textContent = currentTabTitle;
   }
 }
 
@@ -465,43 +478,54 @@ async function loadTabPickerList() {
     return;
   }
 
-  // 过滤掉当前活动标签页和已抓取页面
-  const availableTabs = handler.filter(tab => !tab.active && tab.url !== currentTabUrl);
-  if (availableTabs.length === 0) {
-    listEl.innerHTML = '<div class="tab-picker-loading">没有其他可抓取的标签页</div>';
-    return;
-  }
-
   const capturedUrls = new Set(capturedPages.map(p => p.url));
   let html = '';
-  availableTabs.forEach(tab => {
+  handler.forEach(tab => {
     let domain = '';
     try { domain = new URL(tab.url).hostname.replace('www.', ''); } catch(e) {}
     const favicon = tab.favIconUrl
       ? `<img src="${tab.favIconUrl}" alt="" onerror="this.style.display='none'; this.parentElement.textContent='🌐';">`
       : (domain ? domain[0].toUpperCase() : '🌐');
     const alreadyCaptured = capturedUrls.has(tab.url);
+    const isCurrentTab = tab.active || tab.url === currentTabUrl;
     const truncatedUrl = tab.url.length > 50 ? tab.url.substring(0, 50) + '...' : tab.url;
 
-    html += `
-      <div class="tab-picker-item ${alreadyCaptured ? 'already-captured' : ''}" data-tab-id="${tab.id}" data-tab-url="${tab.url}" data-tab-title="${tab.title}">
-        <div class="tab-item-checkbox">
-          ${alreadyCaptured
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
-            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'}
+    if (isCurrentTab) {
+      html += `
+        <div class="tab-picker-item current-tab" data-tab-id="${tab.id}" data-tab-url="${tab.url}" data-tab-title="${tab.title}">
+          <div class="tab-item-checkbox" style="border-color:var(--accent);background:var(--accent);color:#fff">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="tab-item-icon">${favicon}</div>
+          <div class="tab-item-info">
+            <div class="tab-item-title">${tab.title}</div>
+            <div class="tab-item-url">${truncatedUrl}</div>
+          </div>
+          <span class="tab-item-badge current-badge">当前打开</span>
         </div>
-        <div class="tab-item-icon">${favicon}</div>
-        <div class="tab-item-info">
-          <div class="tab-item-title">${tab.title}</div>
-          <div class="tab-item-url">${truncatedUrl}</div>
+      `;
+    } else {
+      html += `
+        <div class="tab-picker-item ${alreadyCaptured ? 'already-captured' : ''}" data-tab-id="${tab.id}" data-tab-url="${tab.url}" data-tab-title="${tab.title}">
+          <div class="tab-item-checkbox">
+            ${alreadyCaptured
+              ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+              : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'}
+          </div>
+          <div class="tab-item-icon">${favicon}</div>
+          <div class="tab-item-info">
+            <div class="tab-item-title">${tab.title}</div>
+            <div class="tab-item-url">${truncatedUrl}</div>
+          </div>
+          ${alreadyCaptured ? '<span class="tab-item-badge">已抓取·点击取消</span>' : ''}
         </div>
-        ${alreadyCaptured ? '<span class="tab-item-badge">已抓取·点击取消</span>' : ''}
-      </div>
-    `;
+      `;
+    }
   });
   listEl.innerHTML = html;
 
   listEl.querySelectorAll('.tab-picker-item').forEach(item => {
+    if (item.classList.contains('current-tab')) return;
     item.addEventListener('click', () => {
       const tabId = parseInt(item.dataset.tabId);
       const tabUrl = item.dataset.tabUrl;
@@ -660,9 +684,14 @@ function renderPageList() {
   const list = document.getElementById('pageList');
   if (!list) return;
   let html = `
-    <div class="page-item ${activePageId === 'current' ? 'active' : ''}" data-page-id="current">
+    <div class="page-item ${activePageId === 'current' ? 'active' : ''} ${currentPageExcluded ? 'page-excluded' : ''}" data-page-id="current">
       <span class="page-favicon">🌐</span>
-      <span class="page-title" id="currentPageTitle">当前页面</span>
+      <span class="page-title" id="currentPageTitle">${currentTabTitle || '当前页面'}</span>
+      <button class="page-toggle-btn" data-action="toggle-current" title="${currentPageExcluded ? '加入对比' : '排除对比'}">
+        ${currentPageExcluded
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>'}
+      </button>
     </div>
   `;
   capturedPages.forEach(page => {
@@ -3106,7 +3135,7 @@ async function sendMessage() {
   console.log(`[sendMessage] 🚦 关键词预检测: ${preIntent.type}, 需要页面内容: ${needPageContent}`);
 
   // 获取页面内容（仅在需要时抓取）
-  if (activePageId === 'current' && needPageContent) {
+  if (activePageId === 'current' && needPageContent && !currentPageExcluded) {
     const currentPageInCaptured = capturedPages.find(p => p.id === activePageId || p.id?.startsWith('page_'));
 
     if (!currentPageInCaptured) {
@@ -5205,8 +5234,11 @@ function init() {
     }
     floatMenu.classList.add("hidden");
     setActivePage('current');
-    const totalPages = capturedPages.length + 1;
-    const comparePrompt = `请对比分析以下 ${totalPages} 个页面的内容（含当前页面 + ${capturedPages.length} 个已抓取页面），按以下格式输出：
+    const totalPages = currentPageExcluded ? capturedPages.length : capturedPages.length + 1;
+    const pageDesc = currentPageExcluded
+      ? `${capturedPages.length} 个已抓取页面`
+      : `含当前页面 + ${capturedPages.length} 个已抓取页面`;
+    const comparePrompt = `请对比分析以下 ${totalPages} 个页面的内容（${pageDesc}），按以下格式输出：
 
 ## 页面概览
 （每个页面的主题和用途）
