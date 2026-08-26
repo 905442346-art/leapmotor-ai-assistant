@@ -371,8 +371,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const resp1 = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-            'Accept': 'application/json'
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-with': 'XMLHttpRequest',
+            'Accept': '*/*'
           },
           body: formData.toString(),
           credentials: 'include'
@@ -415,8 +416,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const resp2 = await fetch(`${baseUrl}${ep}`, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-                'Accept': 'application/json'
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-with': 'XMLHttpRequest',
+                'Accept': '*/*'
               },
               body: reqData.toString(),
               credentials: 'include'
@@ -448,8 +450,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const resp3 = await fetch(`${baseUrl}/api/workflow/getToDoRequest`, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-                'Accept': 'application/json'
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-with': 'XMLHttpRequest',
+                'Accept': '*/*'
               },
               body: reqData3.toString(),
               credentials: 'include'
@@ -502,8 +505,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const resp = await fetch(`${baseUrl}/api/workflow/getRequest`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
-            'Accept': 'application/json'
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-with': 'XMLHttpRequest',
+            'Accept': '*/*'
           },
           body: formData.toString(),
           credentials: 'include'
