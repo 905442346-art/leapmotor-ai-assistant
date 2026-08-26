@@ -4866,6 +4866,9 @@ function checkElementChange() {
           appendMonitorLog('检测到变化！' + changes.join('、'), 'alert');
           appendMonitorLog(diff, 'alert');
           monitorLastContent = current;
+          stopMonitoring();
+          showChangeNotification(diff);
+          updateFloatingButtonState(true);
           notifyElementChange(diff);
         } else {
           appendMonitorLog('无变化', 'muted');
@@ -4890,6 +4893,25 @@ function notifyElementChange(diff) {
     input.value = '我监控的页面元素发生了变化：\n\n' + diff + '\n\n请分析这个变化的含义。';
     input.focus();
     sendMessage();
+  }
+}
+
+function showChangeNotification(diff) {
+  const banner = document.getElementById('changeNotification');
+  const desc = document.getElementById('notificationDesc');
+  if (!banner || !desc) return;
+  desc.textContent = diff;
+  banner.classList.remove('hidden');
+  banner.classList.add('slideDownBanner');
+}
+
+function updateFloatingButtonState(isChanged) {
+  const floatBtn = document.getElementById('floatMoreBtn');
+  if (!floatBtn) return;
+  if (isChanged) {
+    floatBtn.classList.add('alert-state');
+  } else {
+    floatBtn.classList.remove('alert-state');
   }
 }
 
@@ -5204,6 +5226,12 @@ function init() {
   const monitorClose = document.getElementById('monitorCloseBtn');
   if (monitorClose) monitorClose.addEventListener('click', () => {
     document.getElementById('monitorPanel').classList.add('hidden');
+  });
+
+  const acknowledgeBtn = document.getElementById('acknowledgeBtn');
+  if (acknowledgeBtn) acknowledgeBtn.addEventListener('click', () => {
+    document.getElementById('changeNotification').classList.add('hidden');
+    updateFloatingButtonState(false);
   });
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsPanel').classList.toggle('hidden');
