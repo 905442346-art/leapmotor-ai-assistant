@@ -1429,6 +1429,7 @@ let pickerActive = false;
 let pickerOverlay = null;
 let pickerHighlight = null;
 let pickerTooltip = null;
+let pickerKeydownHandler = null;
 
 function activateElementPicker() {
   if (pickerActive) { deactivateElementPicker(); return; }
@@ -1454,6 +1455,16 @@ function activateElementPicker() {
   pickerOverlay.addEventListener('click', onPickerClick);
   pickerOverlay.addEventListener('contextmenu', (e) => { e.preventDefault(); deactivateElementPicker(); });
 
+  // ESC 键退出抓取
+  pickerKeydownHandler = function(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      deactivateElementPicker();
+    }
+  };
+  document.addEventListener('keydown', pickerKeydownHandler, true);
+
   // 显示提示
   showPickerBanner();
 }
@@ -1462,7 +1473,7 @@ function showPickerBanner() {
   const banner = document.createElement('div');
   banner.id = 'ai-picker-banner';
   banner.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483649;background:#1AB382;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;font-family:system-ui;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
-  banner.textContent = '🔍 点击要监控的元素 · 右键取消';
+  banner.textContent = '🔍 点击要监控的元素 · ESC或右键取消';
   document.body.appendChild(banner);
 }
 
@@ -1471,6 +1482,7 @@ function deactivateElementPicker() {
   if (pickerOverlay) { pickerOverlay.remove(); pickerOverlay = null; }
   if (pickerHighlight) { pickerHighlight.remove(); pickerHighlight = null; }
   if (pickerTooltip) { pickerTooltip.remove(); pickerTooltip = null; }
+  if (pickerKeydownHandler) { document.removeEventListener('keydown', pickerKeydownHandler, true); pickerKeydownHandler = null; }
   const banner = document.getElementById('ai-picker-banner');
   if (banner) banner.remove();
 }

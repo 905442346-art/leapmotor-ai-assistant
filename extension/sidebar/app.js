@@ -477,29 +477,40 @@ async function loadTabPickerList() {
     html += `
       <div class="tab-picker-item ${alreadyCaptured ? 'already-captured' : ''}" data-tab-id="${tab.id}" data-tab-url="${tab.url}" data-tab-title="${tab.title}">
         <div class="tab-item-checkbox">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          ${alreadyCaptured
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'}
         </div>
         <div class="tab-item-icon">${favicon}</div>
         <div class="tab-item-info">
           <div class="tab-item-title">${tab.title}</div>
           <div class="tab-item-url">${truncatedUrl}</div>
         </div>
+        ${alreadyCaptured ? '<span class="tab-item-badge">已抓取·点击取消</span>' : ''}
       </div>
     `;
   });
   listEl.innerHTML = html;
 
   listEl.querySelectorAll('.tab-picker-item').forEach(item => {
-    if (item.classList.contains('already-captured')) return;
     item.addEventListener('click', () => {
       const tabId = parseInt(item.dataset.tabId);
+      const tabUrl = item.dataset.tabUrl;
+
+      if (item.classList.contains('already-captured')) {
+        const pageToRemove = capturedPages.find(p => p.url === tabUrl);
+        if (pageToRemove) {
+          removePage(pageToRemove.id);
+          loadTabPickerList();
+        }
+        return;
+      }
+
       if (selectedTabIds.has(tabId)) {
-        // 取消选择 - 移除绿色标注
         selectedTabIds.delete(tabId);
         item.classList.remove('selected');
         sendHighlightToTab(tabId, false);
       } else {
-        // 选中 - 添加绿色标注
         selectedTabIds.add(tabId);
         item.classList.add('selected');
         sendHighlightToTab(tabId, true);
@@ -5121,9 +5132,9 @@ function init() {
     const compareBtn2 = document.getElementById('compareBtn');
     const compareLabel = document.getElementById('compareLabel');
     if (compareBtn2) {
-      if (capturedPages.length < 2) {
+      if (capturedPages.length < 1) {
         compareBtn2.classList.add('disabled');
-        if (compareLabel) compareLabel.textContent = '多页面对比（需先抓取2+页面）';
+        if (compareLabel) compareLabel.textContent = '多页面对比（需先抓取1+页面）';
       } else {
         compareBtn2.classList.remove('disabled');
         if (compareLabel) compareLabel.textContent = '多页面对比';
@@ -5172,21 +5183,21 @@ function init() {
   // 多页面对比分析
   const compareBtn = document.getElementById('compareBtn');
   if (compareBtn) compareBtn.addEventListener('click', () => {
-    if (capturedPages.length < 2) {
-      // 提示用户先抓取页面
+    if (capturedPages.length < 1) {
       const compareLabel = document.getElementById('compareLabel');
       if (compareLabel) {
         compareLabel.style.color = '#FF453A';
-        compareLabel.textContent = '请先抓取2个以上页面！';
+        compareLabel.textContent = '请先抓取1个以上页面！';
         setTimeout(() => {
           compareLabel.style.color = '';
-          compareLabel.textContent = '多页面对比（需先抓取2+页面）';
+          compareLabel.textContent = '多页面对比（需先抓取1+页面）';
         }, 2000);
       }
       return;
     }
     floatMenu.classList.add("hidden");
-    const comparePrompt = `请对比分析以下 ${capturedPages.length} 个页面的内容，按以下格式输出：
+    const totalPages = capturedPages.length + 1;
+    const comparePrompt = `请对比分析以下 ${totalPages} 个页面的内容（含当前页面 + ${capturedPages.length} 个已抓取页面），按以下格式输出：
 
 ## 页面概览
 （每个页面的主题和用途）
@@ -5223,6 +5234,18 @@ function init() {
   if (monitorStart) monitorStart.addEventListener('click', startMonitoring);
   const monitorStop = document.getElementById('monitorStopBtn');
   if (monitorStop) monitorStop.addEventListener('click', stopMonitoring);
+  const repickBtn = document.getElementById('repickElementBtn');
+  if (repickBtn) repickBtn.addEventListener('click', () => {
+    stopMonitoring();
+    monitorSelector = null;
+    pickedElement = null;
+    monitorLastContent = null;
+    const pickedInfo = document.getElementById('monitorPickedInfo');
+    if (pickedInfo) pickedInfo.textContent = '请在页面上选择要监控的元素';
+    const statusText = document.getElementById('monitorStatusText');
+    if (statusText) statusText.textContent = '未选择元素';
+    window.parent.postMessage({ type: 'ACTIVATE_ELEMENT_PICKER' }, '*');
+  });
   const monitorClose = document.getElementById('monitorCloseBtn');
   if (monitorClose) monitorClose.addEventListener('click', () => {
     document.getElementById('monitorPanel').classList.add('hidden');

@@ -523,8 +523,28 @@ body {
 }
 
 .tab-picker-item.already-captured {
-  opacity: 0.4;
-  cursor: not-allowed;
+  opacity: 0.65;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+}
+.tab-picker-item.already-captured:hover {
+  opacity: 1;
+  background: rgba(255,69,58,0.06);
+}
+.tab-item-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tab-picker-item.already-captured:hover .tab-item-badge {
+  background: rgba(255,69,58,0.15);
+  color: #FF453A;
 }
 
 .tab-item-checkbox {
@@ -5324,6 +5344,11 @@ body {
 .monitor-btn.stop {
   background: var(--error);
   color: #fff;
+}
+.monitor-btn.repick {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
 }
 .monitor-btn:hover { opacity: 0.85; }
 .monitor-status {
