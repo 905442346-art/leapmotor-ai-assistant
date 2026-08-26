@@ -4095,7 +4095,188 @@ function renderTodoItems(items) {
 
 // ========== AI智能预审 ==========
 let _todo_items_cache = [];
-let _prereview_in_progress = new Set();
+
+/**
+ * 打开待办预审面板并获取列表
+ */
+function openTodoPreReviewPanel() {
+  const panel = document.getElementById('todoPreReviewPanel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  loadTodoPreReviewList();
+}
+
+async function loadTodoPreReviewList() {
+  const body = document.getElementById('todoPreReviewBody');
+  if (!body) return;
+
+  const { oaType, ecologyUrl, empId } = getTodoApiConfig();
+  if (oaType !== 'ecology' || !ecologyUrl || !empId) {
+    body.innerHTML = `
+      <div style="padding:20px;text-align:center;">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">未配置泛微e-cology</div>
+        <div style="font-size:12px;color:var(--text-tertiary);">请在 设置 → 基础配置 中选择<br/>OA系统类型为「泛微e-cology」<br/>并填写系统地址和工号</div>
+      </div>`;
+    return;
+  }
+
+  body.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正在获取待办列表...</div>';
+
+  try {
+    const items = await fetchEcologyTodoItems(ecologyUrl, empId);
+    _todo_items_cache = items;
+    renderPreReviewPanel(items);
+  } catch (err) {
+    console.error('[待办预审] 获取失败:', err);
+    body.innerHTML = `
+      <div style="padding:16px;text-align:center;">
+        <div style="font-size:13px;color:#EF4444;margin-bottom:6px;">获取失败</div>
+        <div style="font-size:12px;color:var(--text-tertiary);">${escapeHtml(err.message)}</div>
+        <button id="todoRetryBtn2" class="todo-retry-btn" style="margin-top:8px;">重试</button>
+      </div>`;
+    const retryBtn = document.getElementById('todoRetryBtn2');
+    if (retryBtn) retryBtn.addEventListener('click', loadTodoPreReviewList);
+  }
+}
+
+function renderPreReviewPanel(items) {
+  const body = document.getElementById('todoPreReviewBody');
+  if (!body) return;
+
+  if (!items || items.length === 0) {
+    body.innerHTML = '<div style="padding:24px;text-align:center;font-size:13px;color:var(--text-tertiary);">🎉 暂无待办事项</div>';
+    return;
+  }
+
+  const hasRequestId = items.some(it => it.requestId);
+  body.innerHTML = `
+    ${hasRequestId ? `
+      <div style="padding:8px 14px;border-bottom:1px solid var(--glass-border);">
+        <button id="panelBatchPreReviewBtn" class="todo-batch-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          全部AI预审
+        </button>
+      </div>
+    ` : ''}
+    <div class="todo-list">
+      ${items.slice(0, 20).map((it, i) => `
+        <div class="todo-item ${it.requestId ? 'todo-item-ecology' : ''}" data-index="${i}">
+          <div class="todo-item-main">
+            <span class="todo-item-dot"></span>
+            <div class="todo-item-info">
+              <span class="todo-item-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+              ${(it.workflowName || it.creator || it.createdate) ? `
+                <div class="todo-item-meta">
+                  ${it.workflowName ? `<span class="todo-meta-tag">${escapeHtml(it.workflowName)}</span>` : ''}
+                  ${it.creator ? `<span class="todo-meta-text">${escapeHtml(it.creator)}</span>` : ''}
+                  ${it.createdate ? `<span class="todo-meta-text">${escapeHtml(it.createdate.substring(0, 10))}</span>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          <div class="todo-item-actions">
+            ${it.requestId ? `
+              <button class="todo-preReview-btn" data-index="${i}" title="AI智能预审">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              </button>
+            ` : ''}
+          </div>
+          <div class="todo-prereview-result hidden" id="panelPreReviewResult${i}"></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  body.querySelectorAll('.todo-preReview-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.index);
+      preReviewTodoInPanel(idx);
+    });
+  });
+
+  const batchBtn = document.getElementById('panelBatchPreReviewBtn');
+  if (batchBtn) {
+    batchBtn.addEventListener('click', () => batchPreReviewInPanel());
+  }
+}
+
+async function preReviewTodoInPanel(idx) {
+  const item = _todo_items_cache[idx];
+  if (!item) return;
+  if (_prereview_in_progress.has(idx)) return;
+  _prereview_in_progress.add(idx);
+
+  const resultEl = document.getElementById(`panelPreReviewResult${idx}`);
+  if (!resultEl) { _prereview_in_progress.delete(idx); return; }
+
+  resultEl.classList.remove('hidden');
+  resultEl.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正在智能预审...</div>';
+
+  try {
+    let detailContent = '';
+    const { ecologyUrl } = getTodoApiConfig();
+
+    if (item.requestId && ecologyUrl) {
+      try {
+        const detail = await fetchEcologyDetail(ecologyUrl, item.requestId);
+        detailContent = formatEcologyDetail(detail);
+      } catch (e) {
+        console.warn('[预审] 获取详情失败:', e.message);
+      }
+    }
+
+    const todoInfo = [
+      `流程标题: ${item.title}`,
+      item.workflowName ? `流程类型: ${item.workflowName}` : '',
+      item.creator ? `发起人: ${item.creator}` : '',
+      item.createdate ? `创建时间: ${item.createdate}` : '',
+      item.nodename ? `当前节点: ${item.nodename}` : '',
+      detailContent ? `\n--- 流程详情 ---\n${detailContent}` : ''
+    ].filter(Boolean).join('\n');
+
+    const prompt = `你是零跑汽车OA流程审批助手。请对以下待办流程进行智能预审分析。
+
+${todoInfo}
+
+请按以下格式输出：
+
+📋 **流程摘要**：一句话概括
+🏷️ **流程类型**：请假/报销/采购/用印/合同/人事/其他
+✅ **审批建议**：同意/驳回/需补充信息
+⚠️ **风险提示**：如有请列出，无则写"无"
+📝 **关注要点**：1-3个要点
+
+简洁输出，每项不超过2行。`;
+
+    const aiResponse = await callAPIForPreReview(prompt);
+    resultEl.innerHTML = `<div class="prereview-content">${formatPreReviewResult(aiResponse)}</div>`;
+  } catch (err) {
+    resultEl.innerHTML = `<div class="prereview-error">预审失败: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    _prereview_in_progress.delete(idx);
+  }
+}
+
+async function batchPreReviewInPanel() {
+  const batchBtn = document.getElementById('panelBatchPreReviewBtn');
+  if (batchBtn) {
+    batchBtn.disabled = true;
+    batchBtn.innerHTML = '<div class="loading-spinner-sm"></div> 预审中...';
+  }
+
+  const items = _todo_items_cache.slice(0, 20);
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].requestId) {
+      await preReviewTodoInPanel(i);
+    }
+  }
+
+  if (batchBtn) {
+    batchBtn.disabled = false;
+    batchBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> 全部AI预审';
+  }
+}
 
 /**
  * 获取泛微流程详情（通过background代理）
@@ -5666,6 +5847,13 @@ function init() {
     window.parent.postMessage({ type: 'ACTIVATE_ELEMENT_PICKER' }, '*');
   });
 
+  // 待办预审 - 获取泛微待办并AI预审
+  const todoPreReviewBtn = document.getElementById('todoPreReviewBtn');
+  if (todoPreReviewBtn) todoPreReviewBtn.addEventListener('click', () => {
+    floatMenu.classList.add("hidden");
+    openTodoPreReviewPanel();
+  });
+
   // 监控面板按钮事件
   const monitorStart = document.getElementById('monitorStartBtn');
   if (monitorStart) monitorStart.addEventListener('click', startMonitoring);
@@ -5692,6 +5880,16 @@ function init() {
   if (acknowledgeBtn) acknowledgeBtn.addEventListener('click', () => {
     document.getElementById('changeNotification').classList.add('hidden');
     updateFloatingButtonState(false);
+  });
+
+  // 待办预审面板按钮
+  const todoPanelClose = document.getElementById('todoPanelCloseBtn');
+  if (todoPanelClose) todoPanelClose.addEventListener('click', () => {
+    document.getElementById('todoPreReviewPanel').classList.add('hidden');
+  });
+  const todoPanelRefresh = document.getElementById('todoRefreshIconBtn');
+  if (todoPanelRefresh) todoPanelRefresh.addEventListener('click', () => {
+    loadTodoPreReviewList();
   });
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsPanel').classList.toggle('hidden');
