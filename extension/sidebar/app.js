@@ -3831,7 +3831,8 @@ function getTodoApiConfig() {
   const apiUrl = (localStorage.getItem('oaTodoApiUrl') || '').trim();
   const empId = (localStorage.getItem('employeeId') || '').trim();
   const ecologyUrl = (localStorage.getItem('ecologyBaseUrl') || '').trim();
-  return { oaType, apiUrl, empId, ecologyUrl };
+  const e10Urls = (localStorage.getItem('ecologyE10Urls') || '').split('\n').map(u => u.trim()).filter(u => u);
+  return { oaType, apiUrl, empId, ecologyUrl, e10Urls };
 }
 
 /**
@@ -3842,11 +3843,11 @@ async function fetchTodoItems() {
   const body = document.getElementById('todoCardBody');
   if (!card || !body) return;
 
-  const { oaType, apiUrl, empId, ecologyUrl } = getTodoApiConfig();
-  console.log('[待办] 配置:', { oaType, apiUrl: apiUrl ? '✓' : '✗', empId: empId ? '✓' : '✗', ecologyUrl: ecologyUrl ? '✓' : '✗' });
+  const { oaType, apiUrl, empId, ecologyUrl, e10Urls } = getTodoApiConfig();
+  console.log('[待办] 配置:', { oaType, apiUrl: apiUrl ? '✓' : '✗', empId: empId ? '✓' : '✗', ecologyUrl: ecologyUrl ? '✓' : '✗', e10Urls: e10Urls.length });
   // 根据系统类型检查配置
   if (oaType === 'ecology') {
-    if (!ecologyUrl || !empId) {
+    if ((!ecologyUrl && e10Urls.length === 0) || !empId) {
       card.classList.add('hidden');
       return;
     }
@@ -3866,7 +3867,7 @@ async function fetchTodoItems() {
   try {
     let items = [];
     if (oaType === 'ecology') {
-      items = await fetchEcologyTodoItems(ecologyUrl, empId);
+      items = await fetchEcologyTodoItems(ecologyUrl, empId, e10Urls);
     } else {
       const url = apiUrl
         .replace(/\{employeeId\}/g, encodeURIComponent(empId))
@@ -3906,18 +3907,18 @@ async function fetchTodoItems() {
 /**
  * 泛微e-cology待办获取（通过background代理，session cookie认证）
  */
-function fetchEcologyTodoItems(baseUrl, empId) {
+function fetchEcologyTodoItems(baseUrl, empId, e10Urls) {
   return new Promise((resolve, reject) => {
     window.parent.postMessage({
       type: 'SEND_TO_BACKGROUND',
       callback: 'ECOLOGY_TODO_RESULT',
-      backgroundMessage: { type: 'FETCH_ECOLOGY_TODO', baseUrl, employeeId: empId }
+      backgroundMessage: { type: 'FETCH_ECOLOGY_TODO', baseUrl, employeeId: empId, e10Urls: e10Urls || [] }
     }, '*');
 
     const timeout = setTimeout(() => {
       window.removeEventListener('message', handler);
       reject(new Error('泛微待办请求超时'));
-    }, 20000);
+    }, 30000);
 
     const handler = (event) => {
       if (event.data.type === 'ECOLOGY_TODO_RESULT') {
@@ -3932,7 +3933,9 @@ function fetchEcologyTodoItems(baseUrl, empId) {
             creator: it.creator || '',
             workflowName: it.workflowName || '',
             createdate: it.createdate || '',
-            nodename: it.nodename || ''
+            nodename: it.nodename || '',
+            sourceSystem: it.sourceSystem || '',
+            sourceUrl: it.sourceUrl || ''
           }));
           resolve(items);
         } else {
@@ -4043,6 +4046,7 @@ function renderTodoItems(items) {
               ${(it.workflowName || it.creator || it.createdate) ? `
                 <div class="todo-item-meta">
                   ${it.workflowName ? `<span class="todo-meta-tag">${escapeHtml(it.workflowName)}</span>` : ''}
+                  ${it.sourceSystem ? `<span class="todo-meta-tag" style="background:rgba(99,102,241,0.12);color:#6366f1;">${escapeHtml(it.sourceSystem)}</span>` : ''}
                   ${it.creator ? `<span class="todo-meta-text">${escapeHtml(it.creator)}</span>` : ''}
                   ${it.createdate ? `<span class="todo-meta-text">${escapeHtml(it.createdate.substring(0, 10))}</span>` : ''}
                 </div>
@@ -4110,8 +4114,8 @@ async function loadTodoPreReviewList() {
   const body = document.getElementById('todoPreReviewBody');
   if (!body) return;
 
-  const { oaType, ecologyUrl, empId } = getTodoApiConfig();
-  if (oaType !== 'ecology' || !ecologyUrl || !empId) {
+  const { oaType, ecologyUrl, empId, e10Urls } = getTodoApiConfig();
+  if (oaType !== 'ecology' || (!ecologyUrl && e10Urls.length === 0) || !empId) {
     body.innerHTML = `
       <div style="padding:20px;text-align:center;">
         <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">未配置泛微e-cology</div>
@@ -4123,7 +4127,7 @@ async function loadTodoPreReviewList() {
   body.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正在获取待办列表...</div>';
 
   try {
-    const items = await fetchEcologyTodoItems(ecologyUrl, empId);
+    const items = await fetchEcologyTodoItems(ecologyUrl, empId, e10Urls);
     _todo_items_cache = items;
     renderPreReviewPanel(items);
   } catch (err) {
@@ -4168,6 +4172,7 @@ function renderPreReviewPanel(items) {
               ${(it.workflowName || it.creator || it.createdate) ? `
                 <div class="todo-item-meta">
                   ${it.workflowName ? `<span class="todo-meta-tag">${escapeHtml(it.workflowName)}</span>` : ''}
+                  ${it.sourceSystem ? `<span class="todo-meta-tag" style="background:rgba(99,102,241,0.12);color:#6366f1;">${escapeHtml(it.sourceSystem)}</span>` : ''}
                   ${it.creator ? `<span class="todo-meta-text">${escapeHtml(it.creator)}</span>` : ''}
                   ${it.createdate ? `<span class="todo-meta-text">${escapeHtml(it.createdate.substring(0, 10))}</span>` : ''}
                 </div>
@@ -4216,10 +4221,11 @@ async function preReviewTodoInPanel(idx) {
   try {
     let detailContent = '';
     const { ecologyUrl } = getTodoApiConfig();
+    const detailUrl = item.sourceUrl || ecologyUrl;
 
-    if (item.requestId && ecologyUrl) {
+    if (item.requestId && detailUrl) {
       try {
-        const detail = await fetchEcologyDetail(ecologyUrl, item.requestId);
+        const detail = await fetchEcologyDetail(detailUrl, item.requestId);
         detailContent = formatEcologyDetail(detail);
       } catch (e) {
         console.warn('[预审] 获取详情失败:', e.message);
@@ -4232,6 +4238,7 @@ async function preReviewTodoInPanel(idx) {
       item.creator ? `发起人: ${item.creator}` : '',
       item.createdate ? `创建时间: ${item.createdate}` : '',
       item.nodename ? `当前节点: ${item.nodename}` : '',
+      item.sourceSystem ? `来源系统: ${item.sourceSystem}` : '',
       detailContent ? `\n--- 流程详情 ---\n${detailContent}` : ''
     ].filter(Boolean).join('\n');
 
@@ -5055,6 +5062,17 @@ function loadSettings() {
       localStorage.setItem('ecologyBaseUrl', ecologyInput.value.trim());
     });
   }
+  // 加载E10系统域名
+  const savedE10Urls = localStorage.getItem('ecologyE10Urls');
+  if (savedE10Urls !== null && document.getElementById('ecologyE10Urls')) {
+    document.getElementById('ecologyE10Urls').value = savedE10Urls;
+  }
+  const e10Input = document.getElementById('ecologyE10Urls');
+  if (e10Input) {
+    e10Input.addEventListener('input', () => {
+      localStorage.setItem('ecologyE10Urls', e10Input.value);
+    });
+  }
 
   // 加载FastGPT设置
   const savedFastGpt = localStorage.getItem('fastGptSettings');
@@ -5242,6 +5260,12 @@ function saveSettings() {
     if (ecologyInput) {
       localStorage.setItem('ecologyBaseUrl', ecologyInput.value.trim());
       console.log('[设置] ✅ 泛微e-cology地址:', ecologyInput.value.trim());
+    }
+    const e10UrlsInput = document.getElementById('ecologyE10Urls');
+    if (e10UrlsInput) {
+      localStorage.setItem('ecologyE10Urls', e10UrlsInput.value);
+      const e10Count = e10UrlsInput.value.split('\n').map(u => u.trim()).filter(u => u).length;
+      console.log('[设置] ✅ E10系统域名:', e10Count, '个');
     }
     const todoApiInput = document.getElementById('oaTodoApiUrl');
     if (todoApiInput) {

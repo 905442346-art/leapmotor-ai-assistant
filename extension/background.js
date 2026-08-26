@@ -436,19 +436,87 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // E10 REST API待办获取函数
+  async function fetchE10Todos(baseUrl) {
+    const url = baseUrl.replace(/\/+$/, '');
+    const hostname = url.replace(/^https?:\/\//, '').split('.')[0];
+    const items = [];
+    let total = 0;
+
+    const e10Endpoints = [
+      '/api/e10/wflRequestListRest',
+      '/api/wflRequestListRest',
+      '/api/e10/workflow/getTodoList',
+      '/api/e10/workflow/getDoingList'
+    ];
+
+    for (const ep of e10Endpoints) {
+      if (items.length > 0) break;
+      try {
+        const resp = await fetch(`${url}${ep}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': '*/*'
+          },
+          body: JSON.stringify({
+            pageSize: 20,
+            pageNo: 1,
+            condition: { status: 'running' }
+          }),
+          credentials: 'include'
+        });
+        const text = await resp.text();
+        console.log(`[Background] E10 ${hostname} ${ep}: HTTP ${resp.status}, 前300字符:`, text.substring(0, 300));
+        if (resp.ok) {
+          try {
+            const data = JSON.parse(text);
+            const parsed = parseEcologyResponse(data);
+            if (parsed.length > 0) {
+              total = data.data?.total || data.total || parsed.length;
+              parsed.forEach(it => { it.sourceSystem = hostname; it.sourceUrl = url; });
+              items.push(...parsed);
+              console.log('[Background] ✅ E10待办:', items.length, 'from', hostname, 'via', ep);
+            }
+          } catch (e) {}
+        }
+      } catch (e) { console.warn('[Background] E10异常:', hostname, ep, e.message); }
+    }
+
+    return { items, total, system: hostname };
+  }
+
   // 处理泛微e-cology待办获取请求（session cookie认证）
   if (request.type === 'FETCH_ECOLOGY_TODO') {
     const baseUrl = (request.baseUrl || '').replace(/\/+$/, '');
     const empId = request.employeeId || '';
+    const e10Urls = (request.e10Urls || []).filter(u => u.trim());
 
-    if (!baseUrl) {
-      sendResponse({ success: false, error: 'e-cology系统地址未配置' });
+    if (!baseUrl && e10Urls.length === 0) {
+      sendResponse({ success: false, error: '请先在设置中配置OA系统地址' });
       return true;
     }
 
     (async () => {
       try {
-        console.log('[Background] 📡 泛微e-cology待办查询:', baseUrl);
+        // E10系统并行获取
+        const e10Promises = e10Urls.map(url => fetchE10Todos(url));
+        const e10Results = await Promise.all(e10Promises);
+        const e10Items = e10Results.flatMap(r => r.items);
+        const e10Total = e10Results.reduce((sum, r) => sum + r.total, 0);
+
+        if (!baseUrl) {
+          // 只配了E10，没有E9
+          if (e10Items.length > 0) {
+            sendResponse({ success: true, data: { items: e10Items, total: e10Total } });
+          } else {
+            sendResponse({ success: false, error: 'E10系统未获取到待办数据。请检查：1)已在浏览器登录E10系统 2)Service Worker控制台日志' });
+          }
+          return;
+        }
+
+        console.log('[Background] 📡 泛微e-cology E9待办查询:', baseUrl);
 
         const ecHeaders = {
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -787,20 +855,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               const tc = dataC.totalcount || dataC.totalCount || {};
               const doing = tc.flowDoing || tc.flowAll || '0';
               console.log('[Background] doingCountInfo待办数:', doing);
-              countInfo = `（系统显示待办数: ${doing}）`;
+              countInfo = `（E9系统显示待办数: ${doing}）`;
             }
           } catch (e) { console.warn('[Background] doingCountInfo失败:', e.message); }
 
-          sendResponse({ success: false, error: `已登录但未获取到待办列表数据${countInfo}。可能e-cology版本接口不兼容，请联系开发人员查看控制台日志` });
+          // 合并E10结果
+          if (e10Items.length > 0) {
+            sendResponse({ success: true, data: { items: e10Items, total: e10Total, e9Failed: true, e9Info: countInfo } });
+          } else {
+            sendResponse({ success: false, error: `E9系统${countInfo}未获取到待办列表数据（组件库未安装）。E10系统也未获取到数据。请检查Service Worker控制台日志` });
+          }
         } else {
-          sendResponse({ success: true, data: { items, total } });
+          // E9获取成功，标记来源并合并E10
+          items.forEach(it => { if (!it.sourceSystem) { it.sourceSystem = 'oa'; it.sourceUrl = baseUrl; } });
+          const allItems = [...items, ...e10Items];
+          const allTotal = total + e10Total;
+          console.log('[Background] ✅ 合并待办: E9', items.length, '+ E10', e10Items.length, '=', allItems.length);
+          sendResponse({ success: true, data: { items: allItems, total: allTotal } });
         }
       } catch (error) {
-        console.error('[Background] ❌ 泛微待办查询失败:', error.message);
-        const hint = error.message.includes('HTTP 401') || error.message.includes('HTTP 403')
-          ? '请先在浏览器中登录泛微e-cology系统'
-          : error.message;
-        sendResponse({ success: false, error: hint });
+        console.error('[Background] ❌ E9待办查询失败:', error.message);
+        // E9失败，但E10可能有数据
+        if (e10Items.length > 0) {
+          sendResponse({ success: true, data: { items: e10Items, total: e10Total, e9Failed: true, e9Error: error.message } });
+        } else {
+          const hint = error.message.includes('HTTP 401') || error.message.includes('HTTP 403')
+            ? '请先在浏览器中登录泛微e-cology系统'
+            : error.message;
+          sendResponse({ success: false, error: hint });
+        }
       }
     })();
 

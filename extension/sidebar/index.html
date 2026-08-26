@@ -330,9 +330,13 @@
           </div>
 
           <div id="ecologyConfig" class="setting-group hidden">
-            <label>泛微e-cology系统地址</label>
+            <label>泛微e-cology系统地址（E9）</label>
             <input type="text" id="ecologyBaseUrl" value="" placeholder="https://oa.leapmotor.com"/>
-            <span class="field-hint">配置后通过泛微标准接口自动获取待办。请确保已在浏览器中登录e-cology系统</span>
+            <span class="field-hint">E9系统，通过标准接口获取待办。请确保已在浏览器中登录</span>
+
+            <label style="margin-top:12px">E10系统域名（每行一个）</label>
+            <textarea id="ecologyE10Urls" rows="3" placeholder="https://lppms.leapmotor.com&#10;https://co.leapmotor.com&#10;https://noa.leapmotor.com" style="width:100%;font-size:13px;resize:vertical;border-radius:8px;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);padding:8px 10px;font-family:inherit"></textarea>
+            <span class="field-hint">E10系统通过REST API获取待办，SSO打通后可直接访问。每行一个地址</span>
           </div>
 
           <div class="tab-footer-hint">
