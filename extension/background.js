@@ -472,17 +472,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         let total = 0;
 
         const tableEndpoints = [
-          { path: '/api/workflow/reqlist/getTableDataList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
-          { path: '/api/ec/dev/table/getTableDataList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
-          { path: '/api/ec/dev/table/getTableData', params: { sessionkey, pageNo: '1', pageSize: '20' } },
-          { path: '/api/workflow/reqlist/getDoingList', params: { sessionkey, pageNo: '1', pageSize: '20' } },
-          { path: '/api/workflow/reqlist/getTableData', params: { sessionkey, pageNo: '1', pageSize: '20' } }
+          '/api/workflow/reqlist/getTableDataList',
+          '/api/ec/dev/table/getTableDataList',
+          '/api/ec/dev/table/getTableData',
+          '/api/workflow/reqlist/getDoingList',
+          '/api/workflow/reqlist/getTableData',
+          '/api/workflow/reqlist/splitPageList',
+          '/api/workflow/reqlist/getListData'
         ];
 
-        for (const { path: ep, params } of tableEndpoints) {
+        for (const ep of tableEndpoints) {
           try {
             const reqData = new URLSearchParams();
-            Object.entries(params).forEach(([k, v]) => reqData.append(k, v));
+            reqData.append('sessionkey', sessionkey);
+            reqData.append('pageNo', '1');
+            reqData.append('pageSize', '20');
 
             const resp2 = await fetch(`${baseUrl}${ep}`, {
               method: 'POST',
@@ -491,20 +495,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               credentials: 'include'
             });
 
-            if (resp2.ok) {
-              const respText2 = await resp2.text();
-              let data2;
-              try { data2 = JSON.parse(respText2); } catch (e) { continue; }
-              console.log('[Background] 列表接口', ep, 'keys:', Object.keys(data2), '前200字符:', respText2.substring(0, 200));
-              items = parseEcologyResponse(data2);
-              if (items.length > 0) {
-                total = data2.total || data2.totalCount || data2.data?.total || items.length;
-                console.log('[Background] ✅ 泛微待办列表:', items.length, 'via', ep);
-                break;
-              }
+            const respText2 = await resp2.text();
+            console.log(`[Background] 列表接口 ${ep}: HTTP ${resp2.status}, 前300字符:`, respText2.substring(0, 300));
+
+            if (!resp2.ok) continue;
+
+            let data2;
+            try { data2 = JSON.parse(respText2); } catch (e) {
+              console.warn('[Background] 列表接口', ep, '非JSON响应');
+              continue;
+            }
+            console.log('[Background] 列表接口', ep, 'keys:', Object.keys(data2));
+            items = parseEcologyResponse(data2);
+            if (items.length > 0) {
+              total = data2.total || data2.totalCount || data2.data?.total || items.length;
+              console.log('[Background] ✅ 泛微待办列表:', items.length, 'via', ep);
+              break;
             }
           } catch (e) {
-            console.warn('[Background] 列表接口失败:', ep, e.message);
+            console.warn('[Background] 列表接口异常:', ep, e.message);
           }
         }
 
@@ -513,7 +522,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const altEndpoints = [
             { path: '/api/workflow/mobile/getTodoList', method: 'GET', params: { pageNo: '1', pageSize: '20' } },
             { path: '/api/workflow/getToDoRequest', method: 'POST', params: { userId: empId, pageNo: '1', pageSize: '20' } },
-            { path: '/api/integration/workflow/getTodoList', method: 'GET', params: { userId: empId, pageNo: '1', pageSize: '20' } }
+            { path: '/api/integration/workflow/getTodoList', method: 'GET', params: { userId: empId, pageNo: '1', pageSize: '20' } },
+            { path: '/api/workflow/reqlist/doingList', method: 'POST', params: { pageNo: '1', pageSize: '20', viewScope: 'doing' } },
+            { path: '/api/workflow/reqlist/getDoingRequests', method: 'POST', params: { pageNo: '1', pageSize: '20', viewScope: 'doing' } }
           ];
 
           for (const { path: ep, method, params } of altEndpoints) {
@@ -528,11 +539,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 opts.body = reqData.toString();
               }
               const resp3 = await fetch(url, opts);
+              const respText3 = await resp3.text();
+              console.log(`[Background] 备选接口 ${ep}: HTTP ${resp3.status}, 前300字符:`, respText3.substring(0, 300));
               if (resp3.ok) {
-                const respText3 = await resp3.text();
                 let data3;
                 try { data3 = JSON.parse(respText3); } catch (e) { continue; }
-                console.log('[Background] 备选接口', ep, '响应前200字符:', respText3.substring(0, 200));
                 items = parseEcologyResponse(data3);
                 if (items.length > 0) {
                   total = items.length;
@@ -541,7 +552,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
               }
             } catch (e) {
-              console.warn('[Background] 备选接口失败:', ep, e.message);
+              console.warn('[Background] 备选接口异常:', ep, e.message);
             }
           }
         }
