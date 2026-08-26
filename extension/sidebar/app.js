@@ -3826,26 +3826,15 @@ function escapeHtml(text) {
 // ========== 我的待办（OA待办聚合） ==========
 let _todo_fetching = false;
 
-function getTodoApiConfig() {
-  const apiUrl = (localStorage.getItem('oaTodoApiUrl') || '').trim();
-  const empId = (localStorage.getItem('employeeId') || '').trim();
-  return { apiUrl, empId };
-}
-
 /**
  * 拉取并渲染待办列表（首页"我的待办"卡片）
+ * 使用泛微E9标准API，通过当前登录会话获取，无需配置接口地址和工号
  */
 async function fetchTodoItems() {
   const card = document.getElementById('todoCard');
   const body = document.getElementById('todoCardBody');
   if (!card || !body) return;
 
-  const { apiUrl, empId } = getTodoApiConfig();
-  // 未配置接口或工号时不显示卡片
-  if (!apiUrl || !empId) {
-    card.classList.add('hidden');
-    return;
-  }
   if (_todo_fetching) return;
   _todo_fetching = true;
 
@@ -3853,30 +3842,21 @@ async function fetchTodoItems() {
   body.innerHTML = '<div class="todo-status">正在获取待办...</div>';
   setTodoBadge('...');
 
-  const url = apiUrl
-    .replace(/\{employeeId\}/g, encodeURIComponent(empId))
-    .replace(/\{number\}/g, encodeURIComponent(empId))
-    .replace(/\{loginId\}/g, encodeURIComponent(empId));
-
   try {
-    let data = null;
-    // 优先直连（扩展已声明 host_permissions，可跨域）
-    try {
-      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      data = await resp.json();
-    } catch (directErr) {
-      console.warn('[待办] 直连失败，尝试background代理:', directErr.message);
-      data = await fetchTodoViaProxy(url);
+    // 通过background代理调用E9标准API（使用登录会话，无需工号）
+    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_TODO' });
+    if (!response || !response.success) {
+      throw new Error(response?.error || '获取失败');
     }
-
-    const items = parseTodoItems(data);
+    const items = parseTodoItems(response.data);
     renderTodoItems(items);
   } catch (err) {
     console.error('[待办] ❌ 获取失败:', err);
     body.innerHTML = `
       <div class="todo-status error">
         待办获取失败：${escapeHtml(err.message || '未知错误')}
+        <br/>
+        <span class="todo-hint">请确保已登录OA系统 (oa.leapmotor.com)</span>
         <br/>
         <button class="todo-retry-btn" id="todoRetryBtn">重试</button>
       </div>`;
@@ -3936,11 +3916,15 @@ function parseTodoItems(data) {
   if (!Array.isArray(arr)) return [];
   return arr.map(it => {
     if (typeof it === 'string') return { title: it, url: '' };
-    return {
-      title: it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '待办事项',
-      url: it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '',
-      desc: it.desc || it.description || it.content || ''
-    };
+    const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '';
+    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '';
+    const parts = [];
+    if (it.workflowname) parts.push(it.workflowname);
+    if (it.nodename) parts.push(it.nodename);
+    if (it.creater) parts.push(`发起人: ${it.creater}`);
+    if (it.createdate) parts.push(it.createdate);
+    const desc = parts.join(' · ') || it.desc || it.description || it.content || '';
+    return { title: title || '待办事项', url, desc };
   }).filter(it => it.title && it.title !== '待办事项');
 }
 
@@ -4465,6 +4449,28 @@ function initPasteHandler() {
 }
 
 // ========== 设置管理 ==========
+async function autoFetchEmployeeId() {
+  try {
+    console.log('[工号] 📡 尝试从E9自动获取工号...');
+    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_USER_INFO' });
+    if (response && response.success && response.data) {
+      const userInfo = response.data;
+      const loginId = userInfo.loginid || userInfo.workCode || userInfo.empNo || '';
+      if (loginId) {
+        employeeId = loginId;
+        localStorage.setItem('employeeId', loginId);
+        const input = document.getElementById('employeeId');
+        if (input) input.value = loginId;
+        console.log('[工号] ✅ 自动获取成功:', loginId);
+        return;
+      }
+    }
+    console.log('[工号] ⚠️ 未获取到工号信息，用户可手动填写');
+  } catch (err) {
+    console.log('[工号] ⚠️ 自动获取失败，用户可手动填写:', err.message);
+  }
+}
+
 function loadSettings() {
   const saved = localStorage.getItem('aiSettings');
   if (saved) {
@@ -4489,17 +4495,9 @@ function loadSettings() {
     employeeId = savedEmployeeId;
   }
 
-  // 加载OA待办接口地址（首页"我的待办"）
-  const savedTodoApiUrl = localStorage.getItem('oaTodoApiUrl');
-  if (savedTodoApiUrl !== null && document.getElementById('oaTodoApiUrl')) {
-    document.getElementById('oaTodoApiUrl').value = savedTodoApiUrl;
-  }
-  // 待办接口地址变更即时保存（与工号输入一致体验）
-  const todoApiInput = document.getElementById('oaTodoApiUrl');
-  if (todoApiInput) {
-    todoApiInput.addEventListener('input', () => {
-      localStorage.setItem('oaTodoApiUrl', todoApiInput.value.trim());
-    });
+  // 自动获取员工工号（从E9 OA系统）
+  if (!savedEmployeeId) {
+    autoFetchEmployeeId();
   }
 
   // 加载FastGPT设置

@@ -321,6 +321,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 获取E9当前登录用户信息（自动获取工号）
+  if (request.type === 'FETCH_E9_USER_INFO') {
+    (async () => {
+      try {
+        const apiUrl = 'https://oa.leapmotor.com/api/hrm/login/getUserAgentInfo';
+        console.log('[Background] 📡 获取E9用户信息:', apiUrl);
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        console.log('[Background] ✅ E9用户信息获取成功');
+        sendResponse({ success: true, data: data });
+      } catch (error) {
+        console.error('[Background] ❌ E9用户信息获取失败:', error.message);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // 获取E9待办列表（泛微E9标准API，使用当前登录会话，无需工号）
+  if (request.type === 'FETCH_E9_TODO') {
+    (async () => {
+      try {
+        const baseUrl = 'https://oa.leapmotor.com';
+
+        // Step 1: 获取sessionkey
+        console.log('[Background] 📡 E9待办: 获取sessionkey...');
+        const splitResp = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            actiontype: 'splitpage',
+            viewScope: 'doing',
+            complete: 0,
+            viewcondition: 0,
+            method: 'all'
+          })
+        });
+        if (!splitResp.ok) throw new Error(`splitPageKey HTTP ${splitResp.status}`);
+        const splitData = await splitResp.json();
+        const sessionkey = splitData.sessionkey;
+        if (!sessionkey) throw new Error('未获取到sessionkey');
+        console.log('[Background] ✅ sessionkey获取成功');
+
+        // Step 2: 获取待办列表数据
+        console.log('[Background] 📡 E9待办: 获取列表数据...');
+        const listResp = await fetch(`${baseUrl}/api/workflow/mobile/getListResult`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            sessionkey: sessionkey,
+            pageIndex: 1,
+            pageSize: 20
+          })
+        });
+        if (!listResp.ok) throw new Error(`getListResult HTTP ${listResp.status}`);
+        const listData = await listResp.json();
+        console.log('[Background] ✅ E9待办列表获取成功');
+        sendResponse({ success: true, data: listData });
+      } catch (error) {
+        console.error('[Background] ❌ E9待办获取失败:', error.message);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   // 打开热更新独立窗口（sidebar在iframe中无法调用showDirectoryPicker）
   if (request.type === 'OPEN_HOT_UPDATE_WINDOW') {
     const version = request.version || '';
