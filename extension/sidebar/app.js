@@ -3843,6 +3843,7 @@ async function fetchTodoItems() {
   if (!card || !body) return;
 
   const { oaType, apiUrl, empId, ecologyUrl } = getTodoApiConfig();
+  console.log('[待办] 配置:', { oaType, apiUrl: apiUrl ? '✓' : '✗', empId: empId ? '✓' : '✗', ecologyUrl: ecologyUrl ? '✓' : '✗' });
   // 根据系统类型检查配置
   if (oaType === 'ecology') {
     if (!ecologyUrl || !empId) {
@@ -5050,6 +5051,22 @@ function saveSettings() {
       }
     }
 
+    // 2.1 保存OA系统类型和泛微e-cology配置
+    const checkedOaType = document.querySelector('input[name="oaSystemType"]:checked');
+    if (checkedOaType) {
+      localStorage.setItem('oaSystemType', checkedOaType.value);
+      console.log('[设置] ✅ OA系统类型:', checkedOaType.value);
+    }
+    const ecologyInput = document.getElementById('ecologyBaseUrl');
+    if (ecologyInput) {
+      localStorage.setItem('ecologyBaseUrl', ecologyInput.value.trim());
+      console.log('[设置] ✅ 泛微e-cology地址:', ecologyInput.value.trim());
+    }
+    const todoApiInput = document.getElementById('oaTodoApiUrl');
+    if (todoApiInput) {
+      localStorage.setItem('oaTodoApiUrl', todoApiInput.value.trim());
+    }
+
     // 3. 保存FastGPT配置
     const fastgptEnabled = document.getElementById('fastgptEnabled')?.checked ?? FASTGPT_CONFIG.enabled;
     localStorage.setItem('fastgptEnabled', fastgptEnabled);
@@ -5069,6 +5086,13 @@ function saveSettings() {
 
     // 6. 显示保存成功状态
     setStatus('✅ 设置已保存', 'success');
+
+    // 6.1 重新拉取待办列表（配置可能已变更）
+    _todo_fetching = false;
+    setTimeout(() => {
+      console.log('[设置] 🔄 刷新待办列表...');
+      fetchTodoItems();
+    }, 300);
 
     // 7. 延迟检测API连接（不阻塞界面返回）
     setTimeout(async () => {
