@@ -3907,23 +3907,53 @@ function fetchTodoViaProxy(url) {
 function parseTodoItems(data) {
   if (!data) return [];
   let arr = data;
+  let header = null;
+
+  // 处理各种E9返回格式
   if (!Array.isArray(arr)) {
-    arr = data.data || data.list || data.rows || data.result || data.records;
+    // 尝试多种嵌套路径
+    arr = data.data?.datas || data.data?.data || data.data?.list || data.data?.rows || data.data?.records || data.data;
     if (arr && !Array.isArray(arr)) {
-      arr = arr.list || arr.records || arr.rows || [];
+      arr = arr.datas || arr.list || arr.records || arr.rows || arr.data || [];
     }
+    if (!Array.isArray(arr)) {
+      arr = data.datas || data.list || data.rows || data.result || data.records || [];
+    }
+    // 提取header信息（E9组件库可能返回header+datas格式）
+    header = data.data?.header || data.header || data.data?.columns || null;
   }
   if (!Array.isArray(arr)) return [];
+
+  // 如果header存在且datas是数组的数组，尝试映射
+  if (header && arr.length > 0 && Array.isArray(arr[0])) {
+    const headerKeys = header.map(h => typeof h === 'string' ? h.toLowerCase() : (h.key || h.dataIndex || h.field || '').toLowerCase());
+    return arr.map(row => {
+      const obj = {};
+      headerKeys.forEach((key, i) => { obj[key] = row[i] || ''; });
+      const title = obj.requestname || obj.title || obj['流程标题'] || obj.name || '';
+      const requestId = obj.requestid || obj.requestid || obj.id || '';
+      const url = obj.pcurl || obj.url || obj.href || (requestId ? `https://oa.leapmotor.com/wui/index.html#/workflow/req?requestid=${requestId}` : '');
+      const parts = [];
+      if (obj.workflowname || obj['流程类型']) parts.push(obj.workflowname || obj['流程类型']);
+      if (obj.nodename || obj['当前节点']) parts.push(obj.nodename || obj['当前节点']);
+      if (obj.creater || obj['创建人']) parts.push(`发起人: ${obj.creater || obj['创建人']}`);
+      if (obj.createdate || obj['创建日期']) parts.push(obj.createdate || obj['创建日期']);
+      const desc = parts.join(' · ');
+      return { title, url, desc, requestId };
+    }).filter(it => it.title);
+  }
+
   return arr.map(it => {
     if (typeof it === 'string') return { title: it, url: '', requestId: '' };
-    const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '';
-    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '';
+    if (Array.isArray(it)) return { title: String(it[0] || ''), url: '', requestId: String(it[1] || '') };
+    const title = it.requestname || it.requestName || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '';
+    const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || (it.requestid ? `https://oa.leapmotor.com/wui/index.html#/workflow/req?requestid=${it.requestid}` : '');
     const requestId = it.requestid || it.requestId || it.id || '';
     const parts = [];
-    if (it.workflowname) parts.push(it.workflowname);
-    if (it.nodename) parts.push(it.nodename);
-    if (it.creater) parts.push(`发起人: ${it.creater}`);
-    if (it.createdate) parts.push(it.createdate);
+    if (it.workflowname || it.workflowName) parts.push(it.workflowname || it.workflowName);
+    if (it.nodename || it.nodeName) parts.push(it.nodename || it.nodeName);
+    if (it.creater || it.creator) parts.push(`发起人: ${it.creater || it.creator}`);
+    if (it.createdate || it.createDate) parts.push(it.createdate || it.createDate);
     const desc = parts.join(' · ') || it.desc || it.description || it.content || '';
     return { title: title || '待办事项', url, desc, requestId };
   }).filter(it => it.title && it.title !== '待办事项');

@@ -354,44 +354,113 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
 
-      // 方案1: 尝试标准E9 RESTful API (多域名+多路径)
+      // 方案1: E9标准API - splitPageKey (form-encoded) + 组件库接口获取列表数据
       for (const baseUrl of baseUrls) {
         try {
-          console.log(`[Background] 📡 E9待办尝试: ${baseUrl}`);
+          console.log(`[Background] 📡 E9待办API尝试: ${baseUrl}`);
 
-          // 尝试 splitPageKey → getListResult
+          // Step 1: 获取sessionkey (使用form-encoded格式，E9标准)
           const splitResp = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ actiontype: 'splitpage', viewScope: 'doing', complete: 0, viewcondition: 0, method: 'all' })
+            body: new URLSearchParams({
+              actiontype: 'splitpage',
+              viewScope: 'doing',
+              complete: '0',
+              viewcondition: '0',
+              method: 'all'
+            }).toString()
           });
 
-          if (splitResp.ok) {
-            const ct = splitResp.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
-              const splitData = await splitResp.json();
-              const sessionkey = splitData.sessionkey;
-              if (sessionkey) {
-                console.log(`[Background] ✅ ${baseUrl} sessionkey获取成功`);
-                const listResp = await fetch(`${baseUrl}/api/workflow/mobile/getListResult`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                  credentials: 'include',
-                  body: JSON.stringify({ sessionkey, pageIndex: 1, pageSize: 20 })
-                });
-                if (listResp.ok) {
-                  const listCt = listResp.headers.get('content-type') || '';
-                  if (listCt.includes('application/json')) {
-                    const listData = await listResp.json();
-                    console.log(`[Background] ✅ ${baseUrl} E9待办列表获取成功`);
-                    sendResponse({ success: true, data: listData });
-                    return;
-                  }
+          if (!splitResp.ok) {
+            console.log(`[Background] ${baseUrl} splitPageKey HTTP ${splitResp.status}`);
+            continue;
+          }
+
+          const ct = splitResp.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) {
+            console.log(`[Background] ${baseUrl} splitPageKey 返回非JSON: ${ct}`);
+            continue;
+          }
+
+          const splitData = await splitResp.json();
+          const sessionkey = splitData.sessionkey;
+          if (!sessionkey) {
+            console.log(`[Background] ${baseUrl} splitPageKey 无sessionkey:`, splitData);
+            continue;
+          }
+          console.log(`[Background] ✅ ${baseUrl} sessionkey: ${sessionkey.substring(0, 20)}...`);
+
+          // Step 2: 用sessionkey获取列表数据，尝试多个组件库接口
+          const listEndpoints = [
+            { url: '/api/ec/dev/table/getTableData', method: 'POST', ct: 'application/x-www-form-urlencoded' },
+            { url: '/api/workflow/reqlist/getListResult', method: 'POST', ct: 'application/x-www-form-urlencoded' },
+            { url: '/api/workflow/mobile/getListResult', method: 'POST', ct: 'application/x-www-form-urlencoded' },
+            { url: '/api/data/com/table/getTableData', method: 'POST', ct: 'application/x-www-form-urlencoded' }
+          ];
+
+          for (const ep of listEndpoints) {
+            try {
+              const listResp = await fetch(`${baseUrl}${ep.url}`, {
+                method: ep.method,
+                headers: { 'Content-Type': ep.ct, 'Accept': 'application/json' },
+                credentials: 'include',
+                body: new URLSearchParams({
+                  sessionkey: sessionkey,
+                  pageIndex: '1',
+                  pageSize: '20',
+                  page: '1',
+                  limit: '20'
+                }).toString()
+              });
+
+              if (!listResp.ok) continue;
+              const listCt = listResp.headers.get('content-type') || '';
+              if (!listCt.includes('application/json')) continue;
+
+              const listData = await listResp.json();
+              console.log(`[Background] ✅ ${baseUrl}${ep.url} 返回数据:`, Object.keys(listData));
+
+              // 尝试解析各种可能的返回格式
+              const items = listData.data?.datas || listData.data?.data || listData.datas || listData.data || listData.rows || [];
+              if (Array.isArray(items) && items.length > 0) {
+                console.log(`[Background] ✅ ${baseUrl} E9待办列表获取成功, ${items.length} 条`);
+                sendResponse({ success: true, data: items });
+                return;
+              }
+            } catch (e) {
+              console.log(`[Background] ${baseUrl}${ep.url} 失败: ${e.message}`);
+            }
+          }
+
+          // 如果组件库接口都失败，尝试用 getAllWorkflowRequestList
+          try {
+            const allResp = await fetch(`${baseUrl}/api/workflow/paService/getAllWorkflowRequestList`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+              credentials: 'include',
+              body: new URLSearchParams({
+                pageIndex: '1',
+                pageSize: '20'
+              }).toString()
+            });
+            if (allResp.ok) {
+              const allCt = allResp.headers.get('content-type') || '';
+              if (allCt.includes('application/json')) {
+                const allData = await allResp.json();
+                const items = allData.data?.datas || allData.datas || allData.data || allData.rows || allData.requestlist || [];
+                if (Array.isArray(items) && items.length > 0) {
+                  console.log(`[Background] ✅ ${baseUrl} getAllWorkflowRequestList 成功, ${items.length} 条`);
+                  sendResponse({ success: true, data: items });
+                  return;
                 }
               }
             }
+          } catch (e) {
+            console.log(`[Background] ${baseUrl} getAllWorkflowRequestList 失败: ${e.message}`);
           }
+
         } catch (e) {
           console.log(`[Background] ${baseUrl} API失败: ${e.message}`);
         }
@@ -420,93 +489,63 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           func: () => {
             const items = [];
 
-            // 方案A: 查找所有包含 requestid 的链接
-            const reqLinks = document.querySelectorAll('a[href*="requestid"], a[href*="requestId"], a[href*="workflowid"], a[href*="workflowId"]');
+            // 方案A: 只查找包含 requestid 的链接（最可靠的流程标识）
+            const reqLinks = document.querySelectorAll('a[href*="requestid"], a[href*="requestId"]');
             reqLinks.forEach(link => {
               const title = link.textContent?.trim() || link.title || '';
               const url = link.href || '';
               const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
               const requestId = match ? match[1] : '';
-              if (title && title.length > 2) {
+              // 过滤导航类链接（标题太短或包含导航关键词）
+              if (title && title.length > 2 && !title.includes('首页') && !title.includes('门户') && !title.includes('入职')) {
                 items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
               }
             });
 
             if (items.length > 0) return items;
 
-            // 方案B: 查找表格行（Ant Design / Element UI / 自定义）
-            const tableSelectors = [
-              '.ant-table-tbody > tr',
-              '.el-table__row',
-              '.wea-new-idx-content table tbody tr',
-              '.wea-table-tbody > tr',
-              '.req-list-table tbody tr',
-              'table.workflow-list tbody tr',
-              '[role="row"]',
-              'tbody tr'
+            // 方案B: 在主内容区域查找表格行
+            const contentSelectors = [
+              '.wea-new-idx-content', '.wea-content', '.main-content',
+              '.ant-table-wrapper', '.ant-spin-nested-loading',
+              '#contentWrapper', '.workflow-list-container', '.list-content'
             ];
 
-            for (const sel of tableSelectors) {
-              const rows = document.querySelectorAll(sel);
-              if (rows.length === 0) continue;
-              console.log(`[DOM提取] 尝试选择器: ${sel}, 找到 ${rows.length} 行`);
+            for (const csel of contentSelectors) {
+              const contentEl = document.querySelector(csel);
+              if (!contentEl) continue;
 
-              rows.forEach(row => {
-                // 尝试获取行内链接
-                const link = row.querySelector('a[href]');
-                const title = link?.textContent?.trim() || row.querySelector('td')?.textContent?.trim() || '';
-                const url = link?.href || '';
-                const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
-                const requestId = match ? match[1] : '';
+              const tableSelectors = [
+                '.ant-table-tbody > tr',
+                '.el-table__row',
+                'table tbody tr',
+                '[role="row"]'
+              ];
 
-                // 尝试提取其他字段
-                const cells = row.querySelectorAll('td');
-                let creater = '', createdate = '', nodename = '';
-                if (cells.length >= 2) creater = cells[1]?.textContent?.trim() || '';
-                if (cells.length >= 3) createdate = cells[2]?.textContent?.trim() || '';
-                if (cells.length >= 4) nodename = cells[3]?.textContent?.trim() || '';
+              for (const tsel of tableSelectors) {
+                const rows = contentEl.querySelectorAll(tsel);
+                if (rows.length === 0) continue;
 
-                if (title && title.length > 2 && !title.includes('暂无数据') && !title.includes('No data')) {
-                  items.push({ title, url, requestId, workflowname: '', nodename, creater, createdate });
-                }
-              });
+                rows.forEach(row => {
+                  const link = row.querySelector('a[href*="requestid"], a[href*="requestId"], a[href]');
+                  const title = link?.textContent?.trim() || row.querySelector('td')?.textContent?.trim() || '';
+                  const url = link?.href || '';
+                  const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
+                  const requestId = match ? match[1] : '';
+                  const cells = row.querySelectorAll('td');
+                  let creater = '', createdate = '';
+                  if (cells.length >= 2) creater = cells[1]?.textContent?.trim() || '';
+                  if (cells.length >= 3) createdate = cells[2]?.textContent?.trim() || '';
+                  if (title && title.length > 2 && !title.includes('暂无数据') && !title.includes('No data') && !title.includes('入职') && !title.includes('必读')) {
+                    items.push({ title, url, requestId, workflowname: '', nodename: '', creater, createdate });
+                  }
+                });
 
-              if (items.length > 0) break;
+                if (items.length > 0) return items;
+              }
             }
 
-            if (items.length > 0) return items;
-
-            // 方案C: 查找所有包含流程标题的点击元素
-            const clickables = document.querySelectorAll('[class*="workflow"], [class*="request"], [class*="todo"]');
-            clickables.forEach(el => {
-              const title = el.textContent?.trim() || '';
-              const link = el.querySelector('a[href]') || el.closest('a[href]');
-              const url = link?.href || '';
-              const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i);
-              const requestId = match ? match[1] : '';
-              if (title && title.length > 4 && title.length < 200 && !title.includes('暂无数据')) {
-                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
-              }
-            });
-            if (items.length > 0) return items;
-
-            // 方案D: 获取页面所有链接，过滤可能的流程链接
-            const allLinks = document.querySelectorAll('a[href]');
-            allLinks.forEach(link => {
-              const title = link.textContent?.trim() || '';
-              const url = link.href || '';
-              if (title.length > 4 && title.length < 200 &&
-                  (url.includes('requestid') || url.includes('workflowId') || url.includes('workflowid') ||
-                   url.includes('processDetail') || url.includes('formDetail'))) {
-                const match = url.match(/[?&]requestid=(\d+)/i) || url.match(/[?&]requestId=(\d+)/i) || url.match(/\/request\/(\d+)/i);
-                const requestId = match ? match[1] : '';
-                items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
-              }
-            });
-
-            if (items.length > 0) return items;
-
-            // 方案E: 最后兜底 - 收集页面DOM信息用于调试
+            // 方案C: 调试信息
             const bodyText = document.body?.innerText?.substring(0, 3000) || '';
             const allHrefs = Array.from(document.querySelectorAll('a[href]')).map(a => ({text: a.textContent?.trim()?.substring(0, 50), href: a.href})).filter(a => a.text.length > 0).slice(0, 30);
             const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({src: f.src, id: f.id, name: f.name}));
