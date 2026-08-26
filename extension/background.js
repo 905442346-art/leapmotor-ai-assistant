@@ -533,6 +533,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         items = [];
         let total = 0;
 
+        // 尝试E10 REST API（wflRequestListRest）
+        const e10Endpoints = [
+          '/api/e10/wflRequestListRest',
+          '/api/wflRequestListRest',
+          '/api/e10/workflow/getTodoList',
+          '/api/e10/workflow/getDoingList'
+        ];
+        for (const ep of e10Endpoints) {
+          if (items.length > 0) break;
+          try {
+            const respE10 = await fetch(`${baseUrl}${ep}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': '*/*'
+              },
+              body: JSON.stringify({
+                pageSize: 20,
+                pageNo: 1,
+                condition: { status: 'running' }
+              }),
+              credentials: 'include'
+            });
+            const e10Text = await respE10.text();
+            console.log(`[Background] E10 REST ${ep}: HTTP ${respE10.status}, 前500字符:`, e10Text.substring(0, 500));
+            if (respE10.ok) {
+              let e10Data;
+              try {
+                e10Data = JSON.parse(e10Text);
+                items = parseEcologyResponse(e10Data);
+                if (items.length > 0) {
+                  total = e10Data.data?.total || e10Data.total || items.length;
+                  console.log('[Background] ✅ 泛微待办(E10 REST):', items.length, 'via', ep);
+                }
+              } catch (e) {}
+            }
+          } catch (e) { console.warn('[Background] E10 REST异常:', ep, e.message); }
+        }
+
         // 尝试JSP旧式接口（不受API版本影响）
         const jspPaths = [
           '/requestControl/requestList.jsp?righttype=doing&subrighttype=0&pagesize=20&pageno=1',
