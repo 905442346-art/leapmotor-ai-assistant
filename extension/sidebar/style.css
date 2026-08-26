@@ -3521,6 +3521,33 @@ body {
   color: var(--text-tertiary);
 }
 
+.todo-ai-btn {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  opacity: 0.6;
+  transition: all 0.2s;
+  padding: 0;
+}
+.todo-ai-btn:hover {
+  opacity: 1;
+  background: var(--accent-glow);
+  transform: scale(1.1);
+}
+
+.todo-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
 .todo-status {
   padding: 24px 16px;
   text-align: center;

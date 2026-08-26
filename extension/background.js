@@ -394,6 +394,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 获取E9流程详情（用于AI智能预审）
+  if (request.type === 'FETCH_E9_WORKFLOW_DETAIL') {
+    const requestId = request.requestId;
+    if (!requestId) {
+      sendResponse({ success: false, error: '缺少requestId' });
+      return true;
+    }
+    (async () => {
+      try {
+        const apiUrl = `https://oa.leapmotor.com/api/workflow/getWorkflowRequest?requestId=${encodeURIComponent(requestId)}`;
+        console.log('[Background] 📡 获取E9流程详情:', apiUrl);
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        console.log('[Background] ✅ E9流程详情获取成功');
+        sendResponse({ success: true, data: data });
+      } catch (error) {
+        console.error('[Background] ❌ E9流程详情获取失败:', error.message);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   // 打开热更新独立窗口（sidebar在iframe中无法调用showDirectoryPicker）
   if (request.type === 'OPEN_HOT_UPDATE_WINDOW') {
     const version = request.version || '';

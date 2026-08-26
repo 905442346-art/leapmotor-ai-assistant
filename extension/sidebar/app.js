@@ -3915,16 +3915,17 @@ function parseTodoItems(data) {
   }
   if (!Array.isArray(arr)) return [];
   return arr.map(it => {
-    if (typeof it === 'string') return { title: it, url: '' };
+    if (typeof it === 'string') return { title: it, url: '', requestId: '' };
     const title = it.requestname || it.title || it.name || it.workflowName || it.taskName || it.subject || it.desc || '';
     const url = it.pcurl || it.url || it.link || it.workflowUrl || it.href || it.taskUrl || it.detailUrl || '';
+    const requestId = it.requestid || it.requestId || it.id || '';
     const parts = [];
     if (it.workflowname) parts.push(it.workflowname);
     if (it.nodename) parts.push(it.nodename);
     if (it.creater) parts.push(`发起人: ${it.creater}`);
     if (it.createdate) parts.push(it.createdate);
     const desc = parts.join(' · ') || it.desc || it.description || it.content || '';
-    return { title: title || '待办事项', url, desc };
+    return { title: title || '待办事项', url, desc, requestId };
   }).filter(it => it.title && it.title !== '待办事项');
 }
 
@@ -3949,21 +3950,92 @@ function renderTodoItems(items) {
   setTodoBadge(String(items.length));
   const shown = items.slice(0, 8);
   body.innerHTML = shown.map((it, i) => `
-    <div class="todo-item" data-url="${escapeHtml(it.url)}" data-index="${i}">
+    <div class="todo-item" data-url="${escapeHtml(it.url)}" data-request-id="${escapeHtml(it.requestId)}" data-index="${i}">
       <span class="todo-item-dot"></span>
-      <span class="todo-item-title" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+      <span class="todo-item-title" title="${escapeHtml(it.desc || it.title)}">${escapeHtml(it.title)}</span>
+      ${it.requestId ? `<button class="todo-ai-btn" data-ai-review="${escapeHtml(it.requestId)}" title="AI智能预审"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z"/></svg></button>` : ''}
       ${it.url ? '<svg class="todo-item-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7"/><polyline points="7 7 17 7 17 17"/></svg>' : ''}
     </div>
   `).join('') + (items.length > 8 ? `<div class="todo-status">还有 ${items.length - 8} 条待办...</div>` : '');
 
   body.querySelectorAll('.todo-item').forEach(item => {
-    item.addEventListener('click', () => {
+    const aiBtn = item.querySelector('.todo-ai-btn');
+    if (aiBtn) {
+      aiBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const reqId = aiBtn.dataset.aiReview;
+        if (reqId) aiPreReviewTodo(reqId, item.querySelector('.todo-item-title').textContent);
+      });
+    }
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.todo-ai-btn')) return;
       const url = item.dataset.url;
       if (url && /^https?:\/\//.test(url)) {
         window.open(url, '_blank');
       }
     });
   });
+}
+
+async function aiPreReviewTodo(requestId, title) {
+  console.log('[AI预审] 📡 开始预审流程:', title, 'ID:', requestId);
+  const input = document.getElementById('messageInput');
+  if (input) {
+    input.value = `🔍 正在获取流程详情...`;
+    input.focus();
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'FETCH_E9_WORKFLOW_DETAIL', requestId });
+    if (!response || !response.success) {
+      throw new Error(response?.error || '获取流程详情失败');
+    }
+
+    const detail = response.data?.data || response.data || {};
+    const workflowName = detail.workflowName || detail.workflowname || '';
+    const requestName = detail.requestName || detail.requestname || title;
+    const creator = detail.creator || detail.creater || '';
+    const createdate = detail.createdate || detail.createDate || '';
+    const mainData = detail.mainData || detail.maindata || [];
+    const fieldList = Array.isArray(mainData)
+      ? mainData.map(f => `- ${f.fieldName || f.name || '未知字段'}: ${f.fieldValue || f.value || ''}`).join('\n')
+      : (typeof mainData === 'string' ? mainData : JSON.stringify(mainData, null, 2));
+
+    const reviewPrompt = `请对以下OA审批流程进行智能预审分析：
+
+**流程标题**: ${requestName}
+**流程类型**: ${workflowName}
+**发起人**: ${creator}
+**发起日期**: ${createdate}
+
+**表单数据**:
+${fieldList}
+
+请按以下格式分析：
+
+## 流程概述
+（简要说明该流程的用途和目的）
+
+## 关键数据
+（提取表单中的关键金额、数量、时间等核心数据）
+
+## 风险提示
+（识别可能存在的风险点，如金额异常、时间冲突、数据缺失等。如无明显风险请标注"暂无明显风险"）
+
+## 预审建议
+（给出预审建议：建议通过 / 建议关注 / 建议驳回，并说明理由）`;
+
+    if (input) {
+      input.value = reviewPrompt;
+      sendMessage();
+    }
+  } catch (err) {
+    console.error('[AI预审] ❌ 失败:', err);
+    if (input) {
+      input.value = `流程「${title}」预审失败：${err.message}。请确保已登录OA系统。`;
+      input.focus();
+    }
+  }
 }
 
 // ========== 工具函数 ==========
@@ -5047,6 +5119,17 @@ function init() {
   // 延迟检查API配置（等设置加载完）
   // 每次打开插件都会检查，有问题就弹出提示
   setTimeout(checkApiConfigAndShowWarning, 500);
+
+  // 绑定待办刷新按钮（初始欢迎页）+ 自动拉取待办
+  const todoRefreshBtnInit = document.getElementById('todoRefreshBtn');
+  if (todoRefreshBtnInit) {
+    todoRefreshBtnInit.addEventListener('click', () => {
+      todoRefreshBtnInit.classList.add('spinning');
+      _todo_fetching = false;
+      fetchTodoItems();
+    });
+  }
+  setTimeout(() => fetchTodoItems(), 800);
 
   // 初始化AI智能推荐问题（延迟执行以确保页面内容已加载）
   setTimeout(() => {

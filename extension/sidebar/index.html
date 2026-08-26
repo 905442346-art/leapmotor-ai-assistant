@@ -467,6 +467,27 @@
         <h2>零跑AI助手</h2>
         <p>智能分析当前页面 · 随时随地获取洞察</p>
 
+        <!-- 我的待办卡片 -->
+        <div id="todoCard" class="todo-card hidden">
+          <div class="todo-card-header">
+            <div class="todo-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+              <span>我的待办</span>
+              <span id="todoBadge" class="todo-badge"></span>
+            </div>
+            <button id="todoRefreshBtn" class="todo-refresh-btn" title="刷新待办">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+            </button>
+          </div>
+          <div id="todoCardBody" class="todo-card-body"></div>
+        </div>
+
         <!-- AI智能推荐问题容器（首次打开时显示） -->
         <div id="smartSuggestionsContainer" class="smart-suggestions-container"></div>
 
