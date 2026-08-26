@@ -447,7 +447,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       '/api/e10/wflRequestListRest',
       '/api/wflRequestListRest',
       '/api/e10/workflow/getTodoList',
-      '/api/e10/workflow/getDoingList'
+      '/api/e10/workflow/getDoingList',
+      '/api/workflow/getTodoList',
+      '/api/workflow/getDoingList',
+      '/api/rest/workflow/getTodoList',
+      '/api/rest/wflRequestListRest',
+      '/sp/api/e10/wflRequestListRest',
+      '/sp/api/workflow/getTodoList',
+      '/ec/rest/workflow/getTodoList',
+      '/ec/api/workflow/getTodoList'
     ];
 
     for (const ep of e10Endpoints) {
@@ -499,12 +507,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     (async () => {
+      // 在try外部声明，确保catch块也能访问
+      let e10Items = [];
+      let e10Total = 0;
+
       try {
         // E10系统并行获取
         const e10Promises = e10Urls.map(url => fetchE10Todos(url));
         const e10Results = await Promise.all(e10Promises);
-        const e10Items = e10Results.flatMap(r => r.items);
-        const e10Total = e10Results.reduce((sum, r) => sum + r.total, 0);
+        e10Items = e10Results.flatMap(r => r.items);
+        e10Total = e10Results.reduce((sum, r) => sum + r.total, 0);
 
         if (!baseUrl) {
           // 只配了E10，没有E9
