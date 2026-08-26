@@ -2227,7 +2227,8 @@ function detectIntentThreeWay(userMessage) {
   const analysisKeywords = [
     '总结这个页面', '总结当前网页', '总结网页内容', '总结一下',
     '分析这个页面', '分析当前页面', '提取页面', '抓取页面',
-    '这个页面说什么', '这个页面的内容', '页面内容'
+    '这个页面说什么', '这个页面的内容', '页面内容',
+    '对比分析', '当前页面', '页面的内容', '对比页面', '对比以下'
   ];
 
   let oaProcessScore = 0;
@@ -3132,7 +3133,7 @@ async function sendMessage() {
         });
 
         if (pageContent) {
-          contextContent = formatPageContent(pageContent);
+          contextContent = `========== 当前页面: ${pageContent.title || '当前页面'} ==========\n${formatPageContent(pageContent)}`;
           updateCurrentPageInfo({ title: pageContent.title });
           messageText += `\n\n[已自动抓取当前页面]`;
           console.log('[sendMessage] ✅ 当前页面内容抓取成功:', pageContent.title);
@@ -3147,12 +3148,10 @@ async function sendMessage() {
 
   if (capturedPages.length > 0) {
     const allContent = capturedPages.map((c, i) =>
-      `\n========== 页面 ${i + 1}: ${c.title} ==========\nURL: ${c.url}\n${formatPageContent(c.content)}`
-    ).join('\n\n');
-    contextContent = allContent;
-    if (activePageId !== 'current') {
-      messageText += `\n\n[已抓取 ${capturedPages.length} 个页面进行组合分析]`;
-    }
+      `\n\n========== 已抓取页面 ${i + 1}: ${c.title} ==========\nURL: ${c.url}\n${formatPageContent(c.content)}`
+    ).join('\n');
+    contextContent += allContent;
+    messageText += `\n\n[已抓取 ${capturedPages.length} 个页面进行对比分析]`;
   }
 
   if (uploadedFiles.length > 0) {
@@ -5205,6 +5204,7 @@ function init() {
       return;
     }
     floatMenu.classList.add("hidden");
+    setActivePage('current');
     const totalPages = capturedPages.length + 1;
     const comparePrompt = `请对比分析以下 ${totalPages} 个页面的内容（含当前页面 + ${capturedPages.length} 个已抓取页面），按以下格式输出：
 
