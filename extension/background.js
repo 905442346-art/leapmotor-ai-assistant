@@ -324,22 +324,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // 获取E9当前登录用户信息（自动获取工号）
   if (request.type === 'FETCH_E9_USER_INFO') {
     (async () => {
-      try {
-        const apiUrl = 'https://oa.leapmotor.com/api/hrm/login/getUserAgentInfo';
-        console.log('[Background] 📡 获取E9用户信息:', apiUrl);
-        const response = await fetch(apiUrl, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          credentials: 'include'
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        console.log('[Background] ✅ E9用户信息获取成功');
-        sendResponse({ success: true, data: data });
-      } catch (error) {
-        console.error('[Background] ❌ E9用户信息获取失败:', error.message);
-        sendResponse({ success: false, error: error.message });
+      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
+      for (const baseUrl of baseUrls) {
+        try {
+          console.log(`[Background] 📡 获取E9用户信息: ${baseUrl}`);
+          const response = await fetch(`${baseUrl}/api/hrm/login/getUserAgentInfo`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include'
+          });
+          if (!response.ok) continue;
+          const ct = response.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) continue;
+          const data = await response.json();
+          console.log(`[Background] ✅ ${baseUrl} E9用户信息获取成功`);
+          sendResponse({ success: true, data: data });
+          return;
+        } catch (e) {
+          console.log(`[Background] ${baseUrl} 用户信息失败: ${e.message}`);
+        }
       }
+      sendResponse({ success: false, error: '未获取到用户信息，请确保已登录OA系统' });
     })();
     return true;
   }
@@ -347,48 +352,127 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // 获取E9待办列表（泛微E9标准API，使用当前登录会话，无需工号）
   if (request.type === 'FETCH_E9_TODO') {
     (async () => {
+      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
+
+      // 方案1: 尝试标准E9 RESTful API (多域名+多路径)
+      for (const baseUrl of baseUrls) {
+        try {
+          console.log(`[Background] 📡 E9待办尝试: ${baseUrl}`);
+
+          // 尝试 splitPageKey → getListResult
+          const splitResp = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ actiontype: 'splitpage', viewScope: 'doing', complete: 0, viewcondition: 0, method: 'all' })
+          });
+
+          if (splitResp.ok) {
+            const ct = splitResp.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const splitData = await splitResp.json();
+              const sessionkey = splitData.sessionkey;
+              if (sessionkey) {
+                console.log(`[Background] ✅ ${baseUrl} sessionkey获取成功`);
+                const listResp = await fetch(`${baseUrl}/api/workflow/mobile/getListResult`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({ sessionkey, pageIndex: 1, pageSize: 20 })
+                });
+                if (listResp.ok) {
+                  const listCt = listResp.headers.get('content-type') || '';
+                  if (listCt.includes('application/json')) {
+                    const listData = await listResp.json();
+                    console.log(`[Background] ✅ ${baseUrl} E9待办列表获取成功`);
+                    sendResponse({ success: true, data: listData });
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`[Background] ${baseUrl} API失败: ${e.message}`);
+        }
+      }
+
+      // 方案2: 从OA页面DOM提取待办
       try {
-        const baseUrl = 'https://oa.leapmotor.com';
+        console.log('[Background] 📡 尝试从OA页面DOM提取待办...');
+        const tabs = await chrome.tabs.query({ url: '*://oa.leapmotor.com/*' });
+        if (tabs.length === 0) {
+          // 也尝试 noa 域名
+          const noaTabs = await chrome.tabs.query({ url: '*://noa.leapmotor.com/*' });
+          if (noaTabs.length === 0) {
+            sendResponse({ success: false, error: '未找到OA页面，请先在浏览器中打开 oa.leapmotor.com 并登录' });
+            return;
+          }
+        }
 
-        // Step 1: 获取sessionkey
-        console.log('[Background] 📡 E9待办: 获取sessionkey...');
-        const splitResp = await fetch(`${baseUrl}/api/workflow/reqlist/splitPageKey`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            actiontype: 'splitpage',
-            viewScope: 'doing',
-            complete: 0,
-            viewcondition: 0,
-            method: 'all'
-          })
-        });
-        if (!splitResp.ok) throw new Error(`splitPageKey HTTP ${splitResp.status}`);
-        const splitData = await splitResp.json();
-        const sessionkey = splitData.sessionkey;
-        if (!sessionkey) throw new Error('未获取到sessionkey');
-        console.log('[Background] ✅ sessionkey获取成功');
+        // 找到OA标签页，注入脚本提取待办
+        const oaTabs = tabs.length > 0 ? tabs : await chrome.tabs.query({ url: '*://noa.leapmotor.com/*' });
+        const oaTab = oaTabs[0];
+        console.log(`[Background] 找到OA标签页: ${oaTab.url}`);
 
-        // Step 2: 获取待办列表数据
-        console.log('[Background] 📡 E9待办: 获取列表数据...');
-        const listResp = await fetch(`${baseUrl}/api/workflow/mobile/getListResult`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            sessionkey: sessionkey,
-            pageIndex: 1,
-            pageSize: 20
-          })
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: oaTab.id },
+          func: () => {
+            // 尝试多种选择器提取待办项
+            const items = [];
+
+            // E-cology 标准待办列表选择器
+            const selectors = [
+              '.workflow-item',
+              '.todo-item',
+              '[data-requestid]',
+              '.req-list-item',
+              'tr[data-requestid]',
+              '.wea-new-idx-content .wea-url',
+              '.list-item[data-id]'
+            ];
+
+            for (const sel of selectors) {
+              const els = document.querySelectorAll(sel);
+              els.forEach(el => {
+                const title = el.textContent?.trim() || '';
+                const url = el.getAttribute('data-url') || el.getAttribute('href') || el.querySelector('a')?.href || '';
+                const requestId = el.getAttribute('data-requestid') || el.getAttribute('data-id') || '';
+                if (title && title.length > 2) {
+                  items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+                }
+              });
+              if (items.length > 0) break;
+            }
+
+            // 如果没有找到，尝试从链接提取
+            if (items.length === 0) {
+              const links = document.querySelectorAll('a[href*="requestid"], a[href*="workflowId"]');
+              links.forEach(link => {
+                const title = link.textContent?.trim() || '';
+                const url = link.href || '';
+                const match = url.match(/requestid=(\d+)/i);
+                const requestId = match ? match[1] : '';
+                if (title && title.length > 2) {
+                  items.push({ title, url, requestId, workflowname: '', nodename: '', creater: '', createdate: '' });
+                }
+              });
+            }
+
+            return items;
+          }
         });
-        if (!listResp.ok) throw new Error(`getListResult HTTP ${listResp.status}`);
-        const listData = await listResp.json();
-        console.log('[Background] ✅ E9待办列表获取成功');
-        sendResponse({ success: true, data: listData });
-      } catch (error) {
-        console.error('[Background] ❌ E9待办获取失败:', error.message);
-        sendResponse({ success: false, error: error.message });
+
+        const todoItems = results?.[0]?.result || [];
+        console.log(`[Background] DOM提取到 ${todoItems.length} 条待办`);
+        if (todoItems.length > 0) {
+          sendResponse({ success: true, data: todoItems });
+        } else {
+          sendResponse({ success: false, error: 'OA页面未找到待办列表，请确保已打开待办页面' });
+        }
+      } catch (domErr) {
+        console.error('[Background] DOM提取失败:', domErr.message);
+        sendResponse({ success: false, error: '获取待办失败：' + domErr.message });
       }
     })();
     return true;
@@ -402,22 +486,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     (async () => {
-      try {
-        const apiUrl = `https://oa.leapmotor.com/api/workflow/getWorkflowRequest?requestId=${encodeURIComponent(requestId)}`;
-        console.log('[Background] 📡 获取E9流程详情:', apiUrl);
-        const response = await fetch(apiUrl, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          credentials: 'include'
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        console.log('[Background] ✅ E9流程详情获取成功');
-        sendResponse({ success: true, data: data });
-      } catch (error) {
-        console.error('[Background] ❌ E9流程详情获取失败:', error.message);
-        sendResponse({ success: false, error: error.message });
+      const baseUrls = ['https://oa.leapmotor.com', 'https://noa.leapmotor.com'];
+      for (const baseUrl of baseUrls) {
+        try {
+          const apiUrl = `${baseUrl}/api/workflow/getWorkflowRequest?requestId=${encodeURIComponent(requestId)}`;
+          console.log('[Background] 📡 获取E9流程详情:', apiUrl);
+          const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include'
+          });
+          if (!response.ok) continue;
+          const ct = response.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) continue;
+          const data = await response.json();
+          console.log(`[Background] ✅ ${baseUrl} E9流程详情获取成功`);
+          sendResponse({ success: true, data: data });
+          return;
+        } catch (error) {
+          console.error(`[Background] ${baseUrl} 流程详情失败:`, error.message);
+        }
       }
+      sendResponse({ success: false, error: '获取流程详情失败，请确保已登录OA系统' });
     })();
     return true;
   }
