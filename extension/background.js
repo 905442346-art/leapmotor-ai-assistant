@@ -730,29 +730,63 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         }
 
-        // 尝试从RequestList.jsp页面源码中提取API路径
+        // 尝试从RequestList.jsp页面源码中提取API路径和数据
         if (items.length === 0) {
           try {
+            // 先用sessionkey POST访问，可能会渲染出数据
+            const formData = new URLSearchParams();
+            formData.append('sessionkey', sessionkey);
+            formData.append('righttype', 'doing');
+            formData.append('pageNo', '1');
+            formData.append('pageSize', '20');
+            formData.append('isajax', '1');
             const respPage = await fetch(`${baseUrl}/workflow/request/RequestList.jsp`, {
-              method: 'GET',
-              headers: { 'Accept': 'text/html,*/*' },
+              method: 'POST',
+              headers: ecHeaders,
+              body: formData.toString(),
               credentials: 'include'
             });
             const pageHtml = await respPage.text();
-            // 搜索JS中的API路径
-            const apiMatches = pageHtml.match(/["'](\/api\/[^"']*?(?:table|data|list|doing|request)[^"']*?)["']/gi);
-            if (apiMatches) {
-              console.log('[Background] RequestList.jsp中发现API路径:', [...new Set(apiMatches.map(m => m.replace(/["']/g, '')))].slice(0, 10));
-            }
-            // 搜索JS中的JSP路径
-            const jspMatches = pageHtml.match(/["'](\/[^"']*?\.jsp[^"']*?)["']/gi);
-            if (jspMatches) {
-              console.log('[Background] RequestList.jsp中发现JSP路径:', [...new Set(jspMatches.map(m => m.replace(/["']/g, '')))].slice(0, 10));
-            }
-            // 搜索JS文件路径
-            const jsFiles = pageHtml.match(/src=["']([^"']*\.js[^"']*)["']/gi);
-            if (jsFiles) {
-              console.log('[Background] RequestList.jsp加载的JS文件:', jsFiles.slice(0, 5));
+            console.log('[Background] RequestList.jsp(POST+sessionkey)长度:', pageHtml.length, '字符');
+            // 尝试直接解析页面中的待办数据
+            items = parseJspTodoList(pageHtml);
+            if (items.length > 0) {
+              total = items.length;
+              console.log('[Background] ✅ 泛微待办(JSP页面解析):', items.length);
+            } else {
+              // 搜索页面中的JSON数据块
+              const jsonMatches = pageHtml.match(/var\s+\w+\s*=\s*(\{[^;]{100,}?\});/gi);
+              if (jsonMatches) {
+                console.log('[Background] RequestList.jsp中发现JSON变量:', jsonMatches.length, '个');
+                for (const jm of jsonMatches.slice(0, 5)) {
+                  try {
+                    const jsonStr = jm.match(/=\s*(\{[\s\S]*\})\s*;/)?.[1];
+                    if (jsonStr && jsonStr.includes('request')) {
+                      const obj = JSON.parse(jsonStr);
+                      const parsed = parseEcologyResponse(obj);
+                      if (parsed.length > 0) {
+                        items = parsed;
+                        total = items.length;
+                        console.log('[Background] ✅ 泛微待办(JS变量解析):', items.length);
+                        break;
+                      }
+                    }
+                  } catch (e) {}
+                }
+              }
+              // 搜索JS中的API路径
+              const apiMatches = pageHtml.match(/["'](\/api\/[^"']*?(?:table|data|list|doing|request)[^"']*?)["']/gi);
+              if (apiMatches) {
+                console.log('[Background] RequestList.jsp中发现API路径:', [...new Set(apiMatches.map(m => m.replace(/["']/g, '')))].slice(0, 10));
+              }
+              // 搜索JS文件路径
+              const jsFiles = pageHtml.match(/src=["']([^"']*\.js[^"']*)["']/gi);
+              if (jsFiles) {
+                console.log('[Background] RequestList.jsp加载的JS文件:', jsFiles.slice(0, 5));
+              }
+              // 打印页面后半部分（可能包含表格数据）
+              const midIdx = Math.floor(pageHtml.length / 2);
+              console.log('[Background] RequestList.jsp中间部分(500字符):', pageHtml.substring(midIdx, midIdx + 500));
             }
           } catch (e) { console.warn('[Background] 页面源码分析失败:', e.message); }
         }
@@ -771,7 +805,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           '/api/workflow/reqlist/doingListData',
           '/api/workflow/reqlist/getDoingData',
           '/api/workflow/center/getDoingList',
-          '/api/workflow/center/getTodoList'
+          '/api/workflow/center/getTodoList',
+          '/api/workflow/reqlist/dataList',
+          '/api/workflow/reqlist/listData',
+          '/api/workflow/reqlist/getData',
+          '/api/workflow/reqlist/queryList',
+          '/api/workflow/reqlist/searchList',
+          '/api/workflow/reqlist/doingList',
+          '/api/workflow/reqlist/getDoingListData',
+          '/api/workflow/reqlist/todoList',
+          '/api/workflow/reqlist/getTodoList',
+          '/api/workflow/reqlist/requestList',
+          '/api/workflow/reqlist/getRequestList'
         ];
 
         for (const ep of tableEndpoints) {
