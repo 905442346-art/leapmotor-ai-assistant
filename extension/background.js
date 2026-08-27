@@ -5,7 +5,23 @@
 function extractTodoFromDOM() {
   const items = [];
 
-  // 策略1：搜索包含 requestid 的链接
+  // 调试：打印页面基本信息
+  const pageUrl = window.location.href;
+  const title = document.title;
+  const bodyClasses = document.body?.className || '';
+  // 统计关键元素数量
+  const stats = {
+    links: document.querySelectorAll('a').length,
+    requestidLinks: document.querySelectorAll('a[href*="requestid"]').length,
+    requestIdLinks: document.querySelectorAll('a[href*="requestId"]').length,
+    flowpageLinks: document.querySelectorAll('a[href*="flowpage"], a[href*="flowPage"]').length,
+    tableRows: document.querySelectorAll('tr').length,
+    todoItems: document.querySelectorAll('[class*="todo"], [class*="task-item"], [class*="work-item"]').length,
+    dataRows: document.querySelectorAll('[data-row-key], [data-request-id], [data-id]').length
+  };
+  console.log('[DOM提取] 页面:', title, 'URL:', pageUrl.substring(0, 80), '统计:', JSON.stringify(stats));
+
+  // 策略1：搜索包含 requestid 的链接（E9标准）
   const links = document.querySelectorAll('a[href*="requestid"]');
   if (links.length > 0) {
     links.forEach(link => {
@@ -147,6 +163,118 @@ function extractTodoFromDOM() {
   }
 
   if (items.length > 0) {
+    const seen = new Set();
+    return items.filter(it => {
+      if (seen.has(it.requestId)) return false;
+      seen.add(it.requestId);
+      return true;
+    });
+  }
+
+  // 策略3.5：搜索 flowpage/flowPage 链接（E10特有）
+  const flowLinks = document.querySelectorAll('a[href*="flowpage"], a[href*="flowPage"], a[href*="flow-page"]');
+  if (flowLinks.length > 0) {
+    console.log('[DOM提取] 发现flowpage链接:', flowLinks.length, '个');
+    flowLinks.forEach(link => {
+      const href = link.getAttribute('href') || '';
+      // E10 URL模式：/sp/workflow/flowpage/view?id=xxx 或 /workflow/detail/xxx
+      const idMatch = href.match(/[?&]id=(\d+)/) || href.match(/\/detail\/(\d+)/) || href.match(/\/flowpage\/\w+\/(\d+)/);
+      const requestId = idMatch ? idMatch[1] : '';
+      const title = link.textContent.trim() || link.getAttribute('title') || '';
+      if (!title) return;
+
+      let row = link.closest('tr') || link.closest('[class*="row"], [class*="item"], li, [class*="card"]');
+      let creator = '', createdate = '', workflowName = '';
+      if (row) {
+        const allText = row.textContent;
+        const dateMatch = allText.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}[\s\d:]*/);
+        if (dateMatch) createdate = dateMatch[0];
+        const creatorMatch = allText.match(/(?:发起人|创建人|申请人|提交人)[：:]\s*(\S+)/);
+        if (creatorMatch) creator = creatorMatch[1];
+      }
+
+      let url = href;
+      if (href.startsWith('/')) url = window.location.origin + href;
+      else if (!href.startsWith('http')) url = window.location.origin + '/' + href;
+
+      items.push({ title, url, requestId, creator, workflowName, createdate, nodename: '', raw: { href } });
+    });
+
+    if (items.length > 0) {
+      console.log('[DOM提取] ✅ flowpage策略提取:', items.length, '条');
+      return items;
+    }
+  }
+
+  // 策略3.6：搜索 data-row-key / data-request-id 属性（Vue/Ant Design表格）
+  const dataRows = document.querySelectorAll('[data-row-key], [data-request-id], [data-row-key] tr, tr[data-row-key]');
+  if (dataRows.length > 0) {
+    console.log('[DOM提取] 发现data-row元素:', dataRows.length, '个');
+    dataRows.forEach(row => {
+      const requestId = row.getAttribute('data-row-key') || row.getAttribute('data-request-id') || row.getAttribute('data-id') || '';
+      if (!requestId || requestId === 'null' || requestId === 'undefined') return;
+
+      const link = row.querySelector('a');
+      const title = link ? link.textContent.trim() : row.textContent.substring(0, 60).trim();
+      if (!title) return;
+
+      const href = link ? (link.getAttribute('href') || '') : '';
+      let url = href;
+      if (href.startsWith('/')) url = window.location.origin + href;
+      else if (href && !href.startsWith('http')) url = window.location.origin + '/' + href;
+
+      const allText = row.textContent;
+      const dateMatch = allText.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}[\s\d:]*/);
+      const creatorMatch = allText.match(/(?:发起人|创建人|申请人|提交人)[：:]\s*(\S+)/);
+
+      items.push({
+        title, url, requestId,
+        creator: creatorMatch ? creatorMatch[1] : '',
+        workflowName: '',
+        createdate: dateMatch ? dateMatch[0] : '',
+        nodename: '',
+        raw: { attr: 'data-row' }
+      });
+    });
+
+    if (items.length > 0) {
+      console.log('[DOM提取] ✅ data-row策略提取:', items.length, '条');
+      return items;
+    }
+  }
+
+  // 策略3.7：搜索所有包含"待办"或"流程"文本的表格行（通用兜底）
+  const allTableRows = document.querySelectorAll('tr');
+  for (const row of allTableRows) {
+    const link = row.querySelector('a');
+    if (!link) continue;
+    const href = link.getAttribute('href') || '';
+    // 匹配任何包含ID参数的链接
+    const idMatch = href.match(/[?&](?:id|requestId|requestid| requestId|flowId)=(\d+)/);
+    if (!idMatch) continue;
+
+    const requestId = idMatch[1];
+    const title = link.textContent.trim();
+    if (!title || title.length < 2) continue;
+
+    const allText = row.textContent;
+    const dateMatch = allText.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}[\s\d:]*/);
+
+    let url = href;
+    if (href.startsWith('/')) url = window.location.origin + href;
+    else if (!href.startsWith('http')) url = window.location.origin + '/' + href;
+
+    items.push({
+      title, url, requestId,
+      creator: '', workflowName: '',
+      createdate: dateMatch ? dateMatch[0] : '',
+      nodename: '',
+      raw: { href }
+    });
+  }
+
+  if (items.length > 0) {
+    console.log('[DOM提取] ✅ 通用表格行策略提取:', items.length, '条');
     const seen = new Set();
     return items.filter(it => {
       if (seen.has(it.requestId)) return false;
@@ -1316,7 +1444,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               if (result.result && result.result.length > 0) {
                 const items = result.result;
                 if (items[0] && items[0].title === '__IFRAME_DETECTED__') {
-                  console.log('[Background] 检测到iframe:', items[0].raw);
+                  console.log('[Background] 检测到iframe (frame:', result.frameId, '):', JSON.stringify(items[0].raw.iframeSrcs));
                   continue; // 继续看其他frame的结果
                 }
                 const hostname = new URL(tab.url).hostname.replace(/\./g, '_').split('_')[0];
