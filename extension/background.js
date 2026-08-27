@@ -461,13 +461,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     for (const ep of e10Endpoints) {
       if (items.length > 0) break;
       try {
+        // 尝试先获取E10 token
+        let authToken = '';
+        try {
+          const tokenResp = await fetch(`${url}/api/ec/dev/auth/applyToken`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'include'
+          });
+          if (tokenResp.ok) {
+            const tokenText = await tokenResp.text();
+            console.log(`[Background] E10 ${hostname} applyToken响应:`, tokenText.substring(0, 200));
+            try {
+              const tokenData = JSON.parse(tokenText);
+              authToken = tokenData.token || tokenData.data?.token || tokenData.access_token || '';
+            } catch (e) {}
+          }
+        } catch (e) {}
+
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': '*/*'
+        };
+        if (authToken) {
+          headers['Authorization'] = `Bearer ${authToken}`;
+          headers['Token'] = authToken;
+        }
+
         const resp = await fetch(`${url}${ep}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': '*/*'
-          },
+          headers: headers,
           body: JSON.stringify({
             pageSize: 20,
             pageNo: 1,
@@ -748,7 +772,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
             const pageHtml = await respPage.text();
             console.log('[Background] RequestList.jsp(POST+sessionkey)长度:', pageHtml.length, '字符');
-            // 尝试直接解析页面中的待办数据
+
+            // 1. 搜索全页中的 requestid 出现次数
+            const requestIdMatches = pageHtml.match(/requestid[=:]["']*\s*(\d{3,})/gi);
+            console.log('[Background] RequestList.jsp中requestid出现次数:', requestIdMatches ? requestIdMatches.length : 0);
+            if (requestIdMatches && requestIdMatches.length > 0) {
+              console.log('[Background] 前几个requestid匹配:', requestIdMatches.slice(0, 5));
+            }
+
+            // 2. 搜索AJAX URL模式
+            const ajaxUrls = pageHtml.match(/url\s*[:=]\s*["']([^"']{10,})["']/gi);
+            if (ajaxUrls) {
+              console.log('[Background] RequestList.jsp中AJAX URL:', [...new Set(ajaxUrls.map(m => m.match(/["']([^"']+)["']/)?.[1]).filter(Boolean))].slice(0, 10));
+            }
+
+            // 3. 搜索 ajax/getJSON/post 调用
+            const ajaxCalls = pageHtml.match(/\.(?:ajax|getJSON|post|get)\s*\(\s*["']([^"']+)["']/gi);
+            if (ajaxCalls) {
+              console.log('[Background] RequestList.jsp中ajax调用:', [...new Set(ajaxCalls.map(m => m.match(/["']([^"']+)["']/)?.[1]).filter(Boolean))].slice(0, 10));
+            }
+
+            // 4. 尝试直接解析页面中的待办数据
             items = parseJspTodoList(pageHtml);
             if (items.length > 0) {
               total = items.length;
@@ -897,8 +941,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         }
 
+        // Step4: 尝试旧版e-cology搜索接口和GET方式JSP
         if (items.length === 0) {
-          // 尝试从doingCountInfo获取数量
+          const oldEndpoints = [
+            { path: `/workflow/request/RequestList.jsp?righttype=doing&subrighttype=0&pagesize=20&pageno=1&sessionkey=${encodeURIComponent(sessionkey)}`, method: 'GET' },
+            { path: `/workflow/request/RequestList.jsp?viewScope=doing&sessionkey=${encodeURIComponent(sessionkey)}&pagesize=20&pageno=1`, method: 'GET' },
+            { path: `/api/workflow/searchResult?viewScope=doing&pageSize=20&pageNo=1`, method: 'GET' },
+            { path: `/api/workflow/request/getRequestList?viewScope=doing&pageSize=20&pageNo=1`, method: 'GET' },
+            { path: `/workflow/searchResult.jsp?viewScope=doing&pageSize=20&pageNo=1`, method: 'GET' },
+            { path: `/request/SearchRequest.jsp?viewScope=doing&pageSize=20&pageNo=1`, method: 'GET' },
+            { path: `/api/workflow/reqlist/splitPageKey`, method: 'POST', extraParams: { actiontype: 'listdata', sessionkey: sessionkey, pageNo: '1', pageSize: '20' } }
+          ];
+
+          for (const { path: ep, method, extraParams } of oldEndpoints) {
+            if (items.length > 0) break;
+            try {
+              const opts = { method, headers: { 'Accept': 'text/html,application/json,*/*', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'include' };
+              if (method === 'POST' && extraParams) {
+                const reqData = new URLSearchParams();
+                Object.entries(extraParams).forEach(([k, v]) => reqData.append(k, v));
+                opts.body = reqData.toString();
+                opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+              }
+              const resp4 = await fetch(`${baseUrl}${ep}`, opts);
+              const respText4 = await resp4.text();
+              console.log(`[Background] 旧版接口 ${ep.substring(0, 60)}: HTTP ${resp4.status}, 前500字符:`, respText4.substring(0, 500));
+              if (resp4.ok) {
+                // 先尝试JSON
+                try {
+                  const data4 = JSON.parse(respText4);
+                  items = parseEcologyResponse(data4);
+                  if (items.length > 0) {
+                    total = items.length;
+                    console.log('[Background] ✅ 泛微待办(旧版JSON):', items.length);
+                    break;
+                  }
+                } catch (e) {}
+                // 再尝试HTML解析
+                items = parseJspTodoList(respText4);
+                if (items.length > 0) {
+                  total = items.length;
+                  console.log('[Background] ✅ 泛微待办(旧版JSP):', items.length);
+                  break;
+                }
+              }
+            } catch (e) {
+              console.warn('[Background] 旧版接口异常:', ep.substring(0, 40), e.message);
+            }
+          }
+        }
+
+        if (items.length === 0) {
           let countInfo = '';
           try {
             const countForm = new URLSearchParams();
