@@ -3948,6 +3948,57 @@ function fetchEcologyTodoItems(baseUrl, empId, e10Urls) {
 }
 
 /**
+ * 通过DOM注入方式获取待办（方案A：读取已打开的OA页面DOM）
+ */
+function fetchDomTodoItems(oaUrls) {
+  return new Promise((resolve, reject) => {
+    window.parent.postMessage({
+      type: 'SEND_TO_BACKGROUND',
+      callback: 'DOM_TODO_RESULT',
+      backgroundMessage: { type: 'EXTRACT_DOM_TODOS', oaUrls }
+    }, '*');
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('DOM提取超时，请确保OA页面已加载完成'));
+    }, 15000);
+
+    const handler = (event) => {
+      if (event.data.type === 'DOM_TODO_RESULT') {
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        if (event.data.success && event.data.data) {
+          const items = (event.data.data.items || []).map(it => ({
+            title: it.title || '待办事项',
+            url: it.url || '',
+            desc: it.workflowName ? `流程: ${it.workflowName}` : '',
+            requestId: it.requestId || '',
+            creator: it.creator || '',
+            workflowName: it.workflowName || '',
+            createdate: it.createdate || '',
+            nodename: it.nodename || '',
+            sourceSystem: it.sourceSystem || '',
+            sourceUrl: it.sourceUrl || '',
+            sourceTabId: it.sourceTabId || null
+          }));
+          resolve(items);
+        } else {
+          const errType = event.data.error;
+          if (errType === 'no_oa_tab') {
+            reject(new Error('__NO_OA_TAB__'));
+          } else if (errType === 'dom_empty') {
+            reject(new Error('__DOM_EMPTY__'));
+          } else {
+            reject(new Error(event.data.hint || event.data.error || 'DOM提取失败'));
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handler);
+  });
+}
+
+/**
  * 通过background代理拉取待办（兜底，处理CORS/内网域限制）
  */
 function fetchTodoViaProxy(url) {
@@ -4124,20 +4175,53 @@ async function loadTodoPreReviewList() {
     return;
   }
 
-  body.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正在获取待办列表...</div>';
+  // 收集所有OA域名（E9 + E10）
+  const oaUrls = [ecologyUrl, ...e10Urls].filter(u => u.trim());
+
+  body.innerHTML = '<div class="prereview-loading"><div class="loading-spinner-sm"></div> 正从OA页面提取待办...</div>';
 
   try {
-    const items = await fetchEcologyTodoItems(ecologyUrl, empId, e10Urls);
+    const items = await fetchDomTodoItems(oaUrls);
     _todo_items_cache = items;
     renderPreReviewPanel(items);
   } catch (err) {
     console.error('[待办预审] 获取失败:', err);
-    body.innerHTML = `
-      <div style="padding:16px;text-align:center;">
-        <div style="font-size:13px;color:#EF4444;margin-bottom:6px;">获取失败</div>
-        <div style="font-size:12px;color:var(--text-tertiary);">${escapeHtml(err.message)}</div>
-        <button id="todoRetryBtn2" class="todo-retry-btn" style="margin-top:8px;">重试</button>
-      </div>`;
+    const errMsg = err.message;
+    let errorHtml = '';
+
+    if (errMsg === '__NO_OA_TAB__') {
+      errorHtml = `
+        <div style="padding:16px;text-align:center;">
+          <div style="font-size:24px;margin-bottom:8px;">📋</div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">未检测到OA页面</div>
+          <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.6;">
+            请先在浏览器中打开OA待办页面：<br/>
+            ${oaUrls.map(u => `<div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(u)}</div>`).join('')}
+            <div style="margin-top:6px;">打开后点击下方按钮刷新</div>
+          </div>
+          <button id="todoRetryBtn2" class="todo-retry-btn" style="margin-top:8px;">刷新待办</button>
+        </div>`;
+    } else if (errMsg === '__DOM_EMPTY__') {
+      errorHtml = `
+        <div style="padding:16px;text-align:center;">
+          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">已找到OA页面但未提取到待办</div>
+          <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px;">
+            请确保页面已完全加载并显示待办列表<br/>
+            如果页面需要点击"待办"菜单，请先点击后再刷新
+          </div>
+          <button id="todoRetryBtn2" class="todo-retry-btn" style="margin-top:8px;">刷新待办</button>
+        </div>`;
+    } else {
+      errorHtml = `
+        <div style="padding:16px;text-align:center;">
+          <div style="font-size:13px;color:#EF4444;margin-bottom:6px;">获取失败</div>
+          <div style="font-size:12px;color:var(--text-tertiary);">${escapeHtml(errMsg)}</div>
+          <button id="todoRetryBtn2" class="todo-retry-btn" style="margin-top:8px;">重试</button>
+        </div>`;
+    }
+
+    body.innerHTML = errorHtml;
     const retryBtn = document.getElementById('todoRetryBtn2');
     if (retryBtn) retryBtn.addEventListener('click', loadTodoPreReviewList);
   }

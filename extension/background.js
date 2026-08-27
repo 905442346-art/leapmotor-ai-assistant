@@ -1,5 +1,181 @@
 // ========== 右键菜单：选中文本AI操作 ==========
 // 从JSP HTML页面解析待办列表（Service Worker兼容，无DOMParser）
+
+// 注入到OA页面中执行的DOM提取函数
+function extractTodoFromDOM() {
+  const items = [];
+
+  // 策略1：搜索包含 requestid 的链接
+  const links = document.querySelectorAll('a[href*="requestid"]');
+  if (links.length > 0) {
+    links.forEach(link => {
+      const href = link.getAttribute('href') || '';
+      const match = href.match(/requestid=(\d+)/);
+      if (!match) return;
+      const requestId = match[1];
+      const title = link.textContent.trim() || link.getAttribute('title') || '';
+      if (!title || title === '待办事项') return;
+
+      // 向上查找所在的行（tr或列表项）
+      let row = link.closest('tr');
+      if (!row) row = link.closest('[class*="row"], [class*="item"], li');
+      if (!row) row = link.parentElement;
+
+      // 从同行中提取其他信息
+      let creator = '', createdate = '', workflowName = '', nodename = '';
+      if (row) {
+        const cells = row.querySelectorAll('td, div, span');
+        const cellTexts = Array.from(cells).map(c => c.textContent.trim()).filter(t => t);
+
+        // 尝试匹配日期格式
+        const dateMatch = cellTexts.find(t => /\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(t));
+        if (dateMatch) createdate = dateMatch;
+
+        // 尝试匹配人名（通常在标题后的非日期单元格中）
+        const nonTitleNonDate = cellTexts.filter(t => t !== title && t !== dateMatch && t.length > 1 && t.length < 20);
+        if (nonTitleNonDate.length > 0) creator = nonTitleNonDate[0];
+
+        // 尝试找流程类型
+        const typeCell = row.querySelector('[class*="type"], [class*="workflow"], [class*="category"]');
+        if (typeCell) workflowName = typeCell.textContent.trim();
+
+        // 尝试找节点名
+        const nodeCell = row.querySelector('[class*="node"], [class*="step"]');
+        if (nodeCell) nodename = nodeCell.textContent.trim();
+      }
+
+      // 构建完整URL
+      let url = href;
+      if (href.startsWith('/')) {
+        url = window.location.origin + href;
+      } else if (!href.startsWith('http')) {
+        url = window.location.origin + '/' + href;
+      }
+
+      items.push({
+        title, url, requestId, creator, workflowName, createdate, nodename,
+        raw: { href, text: link.textContent.substring(0, 100) }
+      });
+    });
+
+    if (items.length > 0) {
+      // 去重（同一个requestId可能出现多次）
+      const seen = new Set();
+      return items.filter(it => {
+        if (seen.has(it.requestId)) return false;
+        seen.add(it.requestId);
+        return true;
+      });
+    }
+  }
+
+  // 策略2：搜索表格行中的数据（E9传统表格）
+  const tables = document.querySelectorAll('table');
+  for (const table of tables) {
+    const rows = table.querySelectorAll('tr');
+    if (rows.length < 2) continue; // 至少有表头+1行数据
+
+    for (const row of rows) {
+      const cells = row.querySelectorAll('td');
+      if (cells.length < 2) continue;
+
+      // 查找行中的链接
+      const link = row.querySelector('a[href*="request"], a[href*="workflow"]');
+      if (!link) continue;
+
+      const href = link.getAttribute('href') || '';
+      const match = href.match(/requestid=(\d+)/) || href.match(/requestId=(\d+)/);
+      if (!match) continue;
+
+      const requestId = match[1];
+      const title = link.textContent.trim();
+      if (!title) continue;
+
+      const cellTexts = Array.from(cells).map(c => c.textContent.trim());
+      const dateMatch = cellTexts.find(t => /\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(t));
+      const nonTitleNonDate = cellTexts.filter(t => t !== title && t !== dateMatch && t.length > 1 && t.length < 30);
+
+      let url = href;
+      if (href.startsWith('/')) url = window.location.origin + href;
+      else if (!href.startsWith('http')) url = window.location.origin + '/' + href;
+
+      items.push({
+        title, url, requestId,
+        creator: nonTitleNonDate[0] || '',
+        workflowName: nonTitleNonDate[1] || '',
+        createdate: dateMatch || '',
+        nodename: nonTitleNonDate[2] || '',
+        raw: { cellCount: cells.length }
+      });
+    }
+
+    if (items.length > 0) break;
+  }
+
+  if (items.length > 0) return items;
+
+  // 策略3：搜索Vue/React渲染的列表项（E10现代UI）
+  const listItems = document.querySelectorAll('[class*="todo"], [class*="task"], [class*="request"], [class*="workflow-item"], [class*="list-item"]');
+  for (const item of listItems) {
+    const link = item.querySelector('a[href*="request"], a[href*="workflow"]');
+    if (!link) continue;
+
+    const href = link.getAttribute('href') || '';
+    const match = href.match(/requestid=(\d+)/i) || href.match(/requestId=(\d+)/i);
+    if (!match) continue;
+
+    const requestId = match[1];
+    const title = link.textContent.trim() || item.textContent.substring(0, 50).trim();
+    if (!title) continue;
+
+    const allText = item.textContent;
+    const dateMatch = allText.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}[\s\d:]*/);
+    const creatorMatch = allText.match(/(?:发起人|创建人|申请人)[：:]\s*(\S+)/);
+
+    let url = href;
+    if (href.startsWith('/')) url = window.location.origin + href;
+    else if (!href.startsWith('http')) url = window.location.origin + '/' + href;
+
+    items.push({
+      title, url, requestId,
+      creator: creatorMatch ? creatorMatch[1] : '',
+      workflowName: '',
+      createdate: dateMatch ? dateMatch[0] : '',
+      nodename: '',
+      raw: { text: allText.substring(0, 200) }
+    });
+  }
+
+  if (items.length > 0) {
+    const seen = new Set();
+    return items.filter(it => {
+      if (seen.has(it.requestId)) return false;
+      seen.add(it.requestId);
+      return true;
+    });
+  }
+
+  // 策略4：如果页面上有iframe，记录iframe信息（可能待办在iframe内）
+  const iframes = document.querySelectorAll('iframe');
+  if (iframes.length > 0) {
+    return [{
+      title: '__IFRAME_DETECTED__',
+      url: '',
+      requestId: '',
+      creator: '',
+      workflowName: '',
+      createdate: '',
+      nodename: '',
+      raw: {
+        iframeCount: iframes.length,
+        iframeSrcs: Array.from(iframes).map(f => f.src || f.getAttribute('src') || '').slice(0, 5)
+      }
+    }];
+  }
+
+  return [];
+}
+
 function parseJspTodoList(html) {
   const items = [];
   try {
@@ -1083,6 +1259,93 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             : error.message;
           sendResponse({ success: false, error: hint });
         }
+      }
+    })();
+
+    return true;
+  }
+
+  // 处理DOM注入方式获取待办（方案A：读取已打开的OA页面DOM）
+  if (request.type === 'EXTRACT_DOM_TODOS') {
+    const oaUrls = request.oaUrls || [];
+    if (oaUrls.length === 0) {
+      sendResponse({ success: false, error: '请先在设置中配置OA系统地址' });
+      return true;
+    }
+
+    (async () => {
+      try {
+        // 查找匹配OA域名的标签页
+        const allTabs = await chrome.tabs.query({});
+        const oaTabs = allTabs.filter(tab => {
+          if (!tab.url) return false;
+          try {
+            const tabUrl = new URL(tab.url);
+            return oaUrls.some(oaUrl => {
+              try {
+                const oaHostname = new URL(oaUrl).hostname;
+                return tabUrl.hostname === oaHostname;
+              } catch (e) { return false; }
+            });
+          } catch (e) { return false; }
+        });
+
+        if (oaTabs.length === 0) {
+          sendResponse({
+            success: false,
+            error: 'no_oa_tab',
+            oaUrls: oaUrls,
+            hint: '请在浏览器中打开OA待办页面后再刷新列表'
+          });
+          return;
+        }
+
+        console.log('[Background] 找到OA标签页:', oaTabs.map(t => `${t.title} (${t.url.substring(0, 50)}...)`));
+
+        const allItems = [];
+
+        for (const tab of oaTabs) {
+          try {
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: tab.id, allFrames: true },
+              func: extractTodoFromDOM
+            });
+
+            // allFrames: true 时返回多个frame的结果
+            for (const result of results) {
+              if (result.result && result.result.length > 0) {
+                const items = result.result;
+                if (items[0] && items[0].title === '__IFRAME_DETECTED__') {
+                  console.log('[Background] 检测到iframe:', items[0].raw);
+                  continue; // 继续看其他frame的结果
+                }
+                const hostname = new URL(tab.url).hostname.replace(/\./g, '_').split('_')[0];
+                items.forEach(it => {
+                  it.sourceSystem = hostname;
+                  it.sourceTabId = tab.id;
+                  it.sourceUrl = new URL(tab.url).origin;
+                });
+                allItems.push(...items);
+                console.log('[Background] ✅ DOM提取:', items.length, 'from', tab.title, result.frameId !== undefined ? `(frame:${result.frameId})` : '');
+              }
+            }
+          } catch (e) {
+            console.warn('[Background] DOM注入失败:', tab.url, e.message);
+          }
+        }
+
+        if (allItems.length > 0) {
+          sendResponse({ success: true, data: { items: allItems, total: allItems.length } });
+        } else {
+          sendResponse({
+            success: false,
+            error: 'dom_empty',
+            hint: '找到OA页面但未提取到待办数据，请确保页面已加载完成并显示待办列表'
+          });
+        }
+      } catch (error) {
+        console.error('[Background] DOM提取失败:', error.message);
+        sendResponse({ success: false, error: error.message });
       }
     })();
 
