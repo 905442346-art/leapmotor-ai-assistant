@@ -313,6 +313,28 @@ if (window.__localAIAssistantInjected) {
     } else if (event.data.type === 'GET_PAGE_CONTENT') {
       const content = extractPageContent();
       sidebarIframe.contentWindow.postMessage({ type: 'PAGE_CONTENT', content }, '*');
+    } else if (event.data.type === 'GET_PREREVIEW_CONTENT') {
+      const base = extractTodoDetailFromCurrentPage();
+      (async () => {
+        const attachmentContents = [];
+        for (const att of base.attachments) {
+          const txt = await fetchAttachmentTextContent(att);
+          if (txt) {
+            attachmentContents.push({ name: att.name, url: att.url, ext: att.ext, content: txt });
+          }
+        }
+        if (sidebarIframe) {
+          sidebarIframe.contentWindow.postMessage({
+            type: 'PREREVIEW_CONTENT_RESULT',
+            title: base.title,
+            url: base.url,
+            detailText: base.detailText,
+            attachments: base.attachments,
+            attachmentContents: attachmentContents,
+            isDetailPage: base.isDetailPage
+          }, '*');
+        }
+      })();
     } else if (event.data.type === 'ACTIVATE_ELEMENT_PICKER') {
       activateElementPicker();
     } else if (event.data.type === 'CHECK_MONITORED_ELEMENT') {
@@ -400,6 +422,88 @@ if (window.__localAIAssistantInjected) {
         console.log('Screenshot failed:', err);
       }
     }
+  }
+
+  // ========== 当前页流程预审：页面正文 + 附件提取 ==========
+  // 直接在用户打开的详情页上读取DOM（无鉴权问题），并探测/抓取附件文本内容
+  function isTodoDetailUrl(url) {
+    return /\/sp\/workflow\/flowpage\/view\/\d+/i.test(url)
+      || /\/workflow\/flowpage\/[^/?#]+\/\d+/i.test(url)
+      || /requestid=\d+/i.test(url);
+  }
+
+  function fileNameFromUrl(u) {
+    try {
+      const p = new URL(u, window.location.href).pathname;
+      const seg = p.split('/').filter(s => s).pop() || '';
+      return seg;
+    } catch (e) { return ''; }
+  }
+
+  function extractTodoDetailFromCurrentPage() {
+    const title = document.title || '';
+    const url = window.location.href || '';
+    let text = '';
+    try { text = document.body ? (document.body.innerText || '') : ''; } catch (e) { text = ''; }
+
+    const isDetailPage = isTodoDetailUrl(url);
+
+    const attachments = [];
+    const seen = new Set();
+    const fileExtRe = /\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z|jpg|jpeg|png|gif|bmp|eml|msg|ofd|wps|et|dps|json|log|xml|html?|md)(?:[?#]|$)/i;
+
+    function pushAtt(name, href) {
+      if (!href) return;
+      const key = href + '|' + (name || '');
+      if (seen.has(key)) return;
+      seen.add(key);
+      const m = (name || href || '').match(/\.([a-zA-Z0-9]{1,8})(?:[?#]|$)/);
+      const ext = m ? m[1].toLowerCase() : '';
+      attachments.push({
+        name: (name || '').replace(/\s+/g, ' ').trim().slice(0, 200) || fileNameFromUrl(href),
+        url: href,
+        ext: ext
+      });
+    }
+
+    document.querySelectorAll('a[href]').forEach(a => {
+      const href = a.href || '';
+      const textContent = (a.textContent || '').replace(/\s+/g, ' ').trim();
+      const name = (a.getAttribute('download') || a.getAttribute('title') || textContent || '').trim();
+      if (fileExtRe.test(href) || /附件|下载|attachment|download/i.test(textContent + name)) {
+        pushAtt(name, href);
+      }
+    });
+
+    return {
+      title: title,
+      url: url,
+      detailText: text.substring(0, 12000),
+      attachments: attachments.slice(0, 40),
+      isDetailPage: isDetailPage
+    };
+  }
+
+  function fetchAttachmentTextContent(att) {
+    return new Promise((resolve) => {
+      const textExts = ['txt', 'csv', 'json', 'log', 'xml', 'eml', 'html', 'htm', 'md'];
+      if (textExts.indexOf(att.ext) < 0) { resolve(null); return; }
+      try {
+        fetch(att.url, { credentials: 'include' })
+          .then(resp => {
+            if (!resp.ok) { resolve(null); return; }
+            const ct = (resp.headers.get('content-type') || '').toLowerCase();
+            if (ct.indexOf('text/') === 0 || ct.indexOf('json') >= 0 || ct.indexOf('xml') >= 0 || ct.indexOf('javascript') >= 0 || ct === '') {
+              resp.text()
+                .then(txt => resolve(txt.substring(0, 6000)))
+                .catch(() => resolve(null));
+            } else {
+              resolve(null);
+            }
+          })
+          .catch(() => resolve(null));
+      } catch (e) { resolve(null); }
+    });
   }
 
   // ========== 标签页绿色标注功能 ==========

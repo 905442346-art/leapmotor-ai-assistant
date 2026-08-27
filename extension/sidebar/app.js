@@ -4150,15 +4150,13 @@ function renderTodoItems(items) {
 
 // ========== AI智能预审 ==========
 let _todo_items_cache = [];
+let _prereview_in_progress = new Set();
 
 /**
- * 打开待办预审面板并获取列表
+ * 触发待办预审：不再弹出面板，直接在主对话页面进行当前页预审
  */
 function openTodoPreReviewPanel() {
-  const panel = document.getElementById('todoPreReviewPanel');
-  if (!panel) return;
-  panel.classList.remove('hidden');
-  loadTodoPreReviewList();
+  preReviewCurrentPage({ showHint: true });
 }
 
 async function loadTodoPreReviewList() {
@@ -4590,6 +4588,164 @@ function formatPreReviewResult(text) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\n/g, '<br>');
   return html;
+}
+
+// ========== 当前页预审（直接抓取已打开的流程详情页 + 附件） ==========
+function detectSystemFromUrl(url) {
+  if (/\/sp\/workflow\/flowpage\/view\/\d+/i.test(url) || /\/workflow\/flowpage\/[^/?#]+\/\d+/i.test(url)) return '泛微E10';
+  if (/requestid=\d+/i.test(url)) return '泛微E9';
+  return 'OA流程';
+}
+
+async function preReviewCurrentPage(options) {
+  const opts = options || {};
+  setStatus('正在读取当前OA流程页面...', 'loading');
+  const result = await requestCurrentPagePrereview();
+  if (!result || !result.isDetailPage) {
+    setStatus('就绪');
+    if (opts.showHint) {
+      addMessage('ai', '🔍 当前页面不是OA流程详情页。\n\n请先在浏览器中打开某个流程详情页（E9/E10），再点击「待办预审」进行智能预审。');
+    }
+    return;
+  }
+  renderCurrentPagePrereview(result);
+}
+
+function requestCurrentPagePrereview() {
+  return new Promise((resolve) => {
+    window.parent.postMessage({ type: 'GET_PREREVIEW_CONTENT' }, '*');
+
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      resolve(null);
+    }, 8000);
+
+    const handler = (event) => {
+      if (event.data.type !== 'PREREVIEW_CONTENT_RESULT') return;
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      resolve(event.data);
+    };
+    window.addEventListener('message', handler);
+  });
+}
+
+function renderCurrentPagePrereview(result) {
+  const attachments = result.attachments || [];
+  const attachmentContents = result.attachmentContents || [];
+  const system = detectSystemFromUrl(result.url);
+
+  const parts = [
+    `流程标题: ${result.title}`,
+    `来源页面: ${result.url}`,
+    `来源系统: ${system}`,
+    result.detailText ? `\n--- 流程正文 ---\n${result.detailText}` : ''
+  ];
+  if (attachments.length > 0) {
+    const names = attachments.map(a => a.name + (a.ext ? '.' + a.ext : '')).join('、');
+    parts.push(`\n--- 流程附件 ---\n共 ${attachments.length} 个附件：${names}`);
+  }
+  if (attachmentContents.length > 0) {
+    let at = '\n--- 已提取附件内容 ---';
+    attachmentContents.forEach((ac, i) => {
+      at += `\n\n【附件${i + 1}: ${ac.name}】\n${ac.content}`;
+    });
+    parts.push(at);
+  }
+
+  const fullPrompt = `你是零跑汽车OA流程审批助手。请对以下待办流程进行智能预审分析。
+
+${parts.filter(Boolean).join('\n')}
+
+请按以下格式输出：
+
+📋 **流程摘要**：一句话概括
+🏷️ **流程类型**：请假/报销/采购/用印/合同/人事/其他
+✅ **审批建议**：同意/驳回/需补充信息
+⚠️ **风险提示**：如有请列出，无则写"无"
+📝 **关注要点**：1-3个要点
+📎 **附件说明**：如有附件，简要说明附件内容与审批的关联
+
+简洁输出，每项不超过2行。`;
+
+  const userLabel = `🔍 请对当前打开的OA流程（${result.title ? result.title : '未命名流程'}）进行智能预审分析`;
+  runPreReviewInChat(fullPrompt, userLabel);
+}
+
+/**
+ * 在主对话页面内执行预审（流式输出，不使用弹框面板）
+ * fullPrompt 已包含流程正文/附件与输出格式要求
+ */
+async function runPreReviewInChat(fullPrompt, userLabel) {
+  if (!isConfigValid) {
+    await checkApiConfigAndShowWarning();
+    if (!isConfigValid) {
+      addMessage('ai', '⚠️ 请先完成API配置后再进行预审。点击设置按钮进行配置。');
+      return;
+    }
+  }
+
+  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  addMessage('user', userLabel);
+
+  const thinkingEl = showThinkingProcess(messageId);
+  if (thinkingEl) {
+    addThinkingStep('detect', '正在读取当前OA流程详情...');
+    addThinkingStep('success', '✅ 已提取流程正文与附件内容');
+    addThinkingStep('ai', '正在调用主AI模型进行智能预审...');
+  }
+
+  const bubble = createAnswerArea();
+  let streamContent = '';
+  const onStreamChunk = (content) => {
+    streamContent = content || '';
+    if (bubble) {
+      bubble.textContent = streamContent;
+      bubble.style.opacity = '1';
+      const container = document.getElementById('chatContainer');
+      if (container) container.scrollTop = container.scrollHeight;
+    }
+  };
+
+  try {
+    // 走主模型（/chat/completions），避免旧的 /v1/chat/completions 404 问题
+    const aiText = await callMainModel(fullPrompt, null, onStreamChunk);
+    removeTypingIndicator();
+    completeThinkingProcess();
+
+    const finalText = aiText || streamContent || '（AI未返回内容）';
+    if (bubble) {
+      bubble.style.opacity = '0';
+      bubble.innerHTML = renderMarkdown(finalText);
+      bubble.style.transition = 'opacity 0.3s ease';
+      requestAnimationFrame(() => { bubble.style.opacity = '1'; });
+      attachCopyButton(bubble, finalText);
+    }
+    chatHistory.push({ role: 'user', content: fullPrompt });
+    chatHistory.push({ role: 'assistant', content: finalText });
+    saveCurrentSession();
+    setStatus('就绪');
+  } catch (err) {
+    removeTypingIndicator();
+    console.error('[当前页预审] 失败:', err);
+    if (currentThinkingProcess) {
+      updateThinkingTitle('❌ 预审中断');
+      setTimeout(() => { currentThinkingProcess = null; }, 500);
+    }
+    if (bubble) {
+      bubble.innerHTML = `<div class="prereview-error">预审失败: ${escapeHtml(err.message)}</div>`;
+    } else {
+      addMessage('ai', `❌ 预审失败: ${err.message}\n\n请检查API设置是否正确。`);
+    }
+    setStatus('错误', 'error');
+    setTimeout(() => setStatus('就绪'), 3000);
+  }
+
+  setTimeout(() => {
+    currentThinkingProcess = null;
+    currentAIBubble = null;
+  }, 500);
 }
 
 // ========== 工具函数 ==========
@@ -6002,6 +6158,10 @@ function init() {
   const todoPanelRefresh = document.getElementById('todoRefreshIconBtn');
   if (todoPanelRefresh) todoPanelRefresh.addEventListener('click', () => {
     loadTodoPreReviewList();
+  });
+  const todoPreReviewCurrentBtn = document.getElementById('todoPreReviewCurrentBtn');
+  if (todoPreReviewCurrentBtn) todoPreReviewCurrentBtn.addEventListener('click', () => {
+    preReviewCurrentPage({ showHint: true });
   });
   document.getElementById('settingsBtn').addEventListener('click', () => {
     document.getElementById('settingsPanel').classList.toggle('hidden');
