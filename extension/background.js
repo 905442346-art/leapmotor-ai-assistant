@@ -464,18 +464,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // 尝试先获取E10 token
         let authToken = '';
         try {
+          console.log(`[Background] E10 ${hostname} 尝试获取token...`);
           const tokenResp = await fetch(`${url}/api/ec/dev/auth/applyToken`, {
             method: 'GET',
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'include'
           });
+          console.log(`[Background] E10 ${hostname} applyToken: HTTP ${tokenResp.status}`);
           if (tokenResp.ok) {
             const tokenText = await tokenResp.text();
-            console.log(`[Background] E10 ${hostname} applyToken响应:`, tokenText.substring(0, 200));
+            console.log(`[Background] E10 ${hostname} applyToken响应:`, tokenText.substring(0, 300));
             try {
               const tokenData = JSON.parse(tokenText);
-              authToken = tokenData.token || tokenData.data?.token || tokenData.access_token || '';
-            } catch (e) {}
+              authToken = tokenData.token || tokenData.data?.token || tokenData.access_token || tokenData.data?.access_token || '';
+              if (authToken) console.log(`[Background] E10 ${hostname} ✅获取到token: ${authToken.substring(0, 20)}...`);
+              else console.log(`[Background] E10 ${hostname} applyToken响应中无token字段, keys:`, Object.keys(tokenData));
+            } catch (e) { console.log(`[Background] E10 ${hostname} applyToken非JSON`); }
           }
         } catch (e) {}
 
@@ -831,6 +835,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               // 打印页面后半部分（可能包含表格数据）
               const midIdx = Math.floor(pageHtml.length / 2);
               console.log('[Background] RequestList.jsp中间部分(500字符):', pageHtml.substring(midIdx, midIdx + 500));
+
+              // 搜索页面中所有script内联代码中的API端点
+              const inlineScripts = pageHtml.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+              if (inlineScripts) {
+                const allInline = inlineScripts.map(s => s.replace(/<\/?script[^>]*>/gi, '')).join('\n');
+                // 搜索ajax url
+                const ajaxInInline = allInline.match(/["'](\/(?:api|workflow|request)[^"']{5,})["']/gi);
+                if (ajaxInInline) {
+                  console.log('[Background] 内联JS中发现的API路径:', [...new Set(ajaxInInline.map(m => m.replace(/["']/g, '')))].slice(0, 15));
+                }
+                // 搜索 splitPage 相关调用
+                const splitCalls = allInline.match(/splitPage[A-Za-z]*\s*\([^)]*\)/gi);
+                if (splitCalls) {
+                  console.log('[Background] splitPage调用:', splitCalls.slice(0, 5));
+                }
+                // 搜索 getTableData 调用
+                const tableCalls = allInline.match(/(?:getTable|tableData|loadData|refreshData|queryData)\s*\([^)]*\)/gi);
+                if (tableCalls) {
+                  console.log('[Background] table数据调用:', tableCalls.slice(0, 5));
+                }
+                // 打印前2000字符的内联JS
+                console.log('[Background] 内联JS(前2000字符):', allInline.substring(0, 2000));
+              }
+
+              // 尝试fetch JS文件并搜索API端点
+              const jsPaths = ['/js/init_wev8.js', '/js/wbusb_wev8.js', '/js/jquery.table_wev8.js'];
+              for (const jsPath of jsPaths) {
+                try {
+                  const jsResp = await fetch(`${baseUrl}${jsPath}`, { credentials: 'include' });
+                  if (jsResp.ok) {
+                    const jsText = await jsResp.text();
+                    // 搜索JS中的API路径模式
+                    const apiInJs = jsText.match(/["'](\/(?:api|workflow|request)[^"']{5,}?(?:list|data|table|doing|request)[^"']*)["']/gi);
+                    if (apiInJs) {
+                      console.log(`[Background] ${jsPath}中发现API路径:`, [...new Set(apiInJs.map(m => m.replace(/["']/g, '')))].slice(0, 10));
+                    }
+                    // 搜索 ajax url 赋值
+                    const urlAssigns = jsText.match(/url\s*[:=]\s*["']([^"']{10,})["']/gi);
+                    if (urlAssigns) {
+                      const urls = [...new Set(urlAssigns.map(m => m.match(/["']([^"']+)["']/)?.[1]).filter(u => u.includes('/') && !u.startsWith('http://') && !u.startsWith('https://')))].slice(0, 10);
+                      if (urls.length > 0) console.log(`[Background] ${jsPath}中url赋值:`, urls);
+                    }
+                  }
+                } catch (e) {}
+              }
             }
           } catch (e) { console.warn('[Background] 页面源码分析失败:', e.message); }
         }
