@@ -22,14 +22,24 @@ const FASTGPT_CONFIG = {
   modelName: ''
 };
 
-// 内置工作流（协同办公）
+// 内置工作流（协同办公、系统操作知识库）
 const BUILTIN_WORKFLOWS = [
   {
     id: 'wf_builtin_coop',
     name: '协同办公',
     appId: '6a4b7073b415c3419d9fb95d',
     apiKey: 'openapi-kQTdGDDkdnMvTNlR1aJYuMpoTwV9HQ9ckYU6LeVT6WsCODCphW4rRmUsU0wzTs',
+    apiUrl: 'https://aiflow.leapmotor.com/api',
     isDefault: true,
+    builtIn: true
+  },
+  {
+    id: 'wf_builtin_syskb',
+    name: '系统操作知识库',
+    appId: '6acca66f0da566eb093ed877',
+    apiKey: 'openapi-g8RzFaaBW8iXIImkm8QgBrpIIrdEfyqnA7pdZf5iRpJ7Ga7w0CzpdkDAGlaSCqsGL',
+    apiUrl: 'https://leaprag.leapmotor.com/api',
+    isDefault: false,
     builtIn: true
   }
 ];
@@ -1851,9 +1861,11 @@ async function detectIntent(userMessage) {
 async function callFastGPT(question, onStreamChunk, workflow) {
   // 使用传入的工作流，或回退到默认工作流
   const wf = workflow || getDefaultWorkflow();
-  if (!FASTGPT_CONFIG.apiUrl || !wf) {
+  // 工作流可配置独立apiUrl（不同知识库平台域名），否则回退全局配置
+  const baseApiUrl = (wf && wf.apiUrl) || FASTGPT_CONFIG.apiUrl;
+  if (!baseApiUrl || !wf) {
     console.error('[FastGPT] ❌ 配置缺失:', {
-      hasApiUrl: !!FASTGPT_CONFIG.apiUrl,
+      hasApiUrl: !!baseApiUrl,
       hasWorkflow: !!wf
     });
     return {
@@ -1866,10 +1878,7 @@ async function callFastGPT(question, onStreamChunk, workflow) {
 
   try {
     // 构建API URL
-    if (!FASTGPT_CONFIG.apiUrl) {
-      throw new Error('leaprag-工作流 API地址未配置');
-    }
-    const apiUrl = FASTGPT_CONFIG.apiUrl.replace(/\/$/, '');
+    const apiUrl = baseApiUrl.replace(/\/$/, '');
     const chatUrl = `${apiUrl}/v1/chat/completions`;
 
     console.log('[FastGPT] 🚀 开始调用...');
@@ -1989,7 +1998,7 @@ async function callFastGPT(question, onStreamChunk, workflow) {
     if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
       errorMsg = '网络连接失败（可能原因：CORS跨域限制、DNS解析失败、网络不通）';
       console.error('[FastGPT] 🔍 网络错误详情:', {
-        url: `${FASTGPT_CONFIG.apiUrl}/v1/chat/completions`,
+        url: chatUrl,
         corsIssue: 'Chrome扩展可能遇到CORS限制',
         suggestion: '检查manifest.json的host_permissions或使用background.js代理'
       });
@@ -7447,6 +7456,11 @@ function renderChangelog(releaseInfo) {
   if (isPlaceholder) {
     // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
     const highlights = {
+      '1.18.0': [
+        '新增内置「系统操作知识库」工作流，系统操作类问题可直接查询',
+        '支持多知识库平台：不同工作流可配置独立 API 域名',
+        '设置中可在「协同办公」与「系统操作知识库」间一键切换默认工作流'
+      ],
       '1.6.5': [
         '热更新下载失败自动重试 3 次，网络抖动不再中断更新',
         '静态下载地址失效时自动走 GitHub API 查询真实资产，彻底避免 404',
