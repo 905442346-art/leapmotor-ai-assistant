@@ -58,6 +58,26 @@ function getDefaultWorkflow() {
   return all.find(w => w.isDefault) || all[0] || null;
 }
 
+// 根据名称解析工作流（AI智能分流用，支持模糊匹配）
+function resolveWorkflowByName(name) {
+  if (!name) return null;
+  const trimmed = String(name).trim();
+  if (!trimmed) return null;
+  const all = getAllWorkflows();
+  return all.find(w => w.name === trimmed) ||
+         all.find(w => trimmed.includes(w.name) || w.name.includes(trimmed)) ||
+         null;
+}
+
+// 判断知识库回答是否为"未命中"类回复（用于多知识库自动兜底切换）
+function isKbMissAnswer(answer) {
+  if (!answer || !answer.trim()) return true;
+  const text = answer.trim();
+  // 命中"未找到"类措辞且整体较短，视为知识库未命中
+  const missPatterns = /(未找到|没有找到|没找到|无法找到|未检索到|暂无相关|没有相关|未查询到|查不到|不在知识库|无法回答)/;
+  return missPatterns.test(text) && text.length < 150;
+}
+
 // 加载用户自定义工作流
 function loadCustomWorkflows() {
   const saved = localStorage.getItem('leaprag_workflows');
@@ -2112,13 +2132,18 @@ async function detectIntentWithAI(userMessage) {
 - "明天杭州天气" → general_chat
 - "帮我写一段Python代码" → general_chat
 
+## 知识库选择（仅当type为system时需要）：
+结合问题内容，从以下知识库中选择最匹配的一个，将其名称原样输出到 workflow 字段：
+${getAllWorkflows().map(w => `- ${w.name}`).join('\n')}
+判断依据：根据知识库名称推断其覆盖范围（如OA/审批/制度/流程咨询类 → 协同办公；系统功能/操作指引/软件使用类 → 系统操作知识库）。无法判断时选择第一个。
+
 ## 重要判断规则：
 1. 区分"发起流程"(oa_process) vs "流程有问题"(system)：用户要"走流程/申请"→oa_process；用户在"问问题/报错/求助"→system
 2. 结合对话上下文：如果前几轮在讨论某个系统问题，当前消息可能是追问，应保持system类型
 3. 只有用户明确要"发起/申请/走流程"时才是oa_process，纯咨询不算
 
 请严格按以下JSON格式回复，不要包含其他内容：
-{"type": "oa_process|system|page_analysis|general_chat", "reason": "简短原因"}`
+{"type": "oa_process|system|page_analysis|general_chat", "reason": "简短原因", "workflow": "最匹配的知识库名称（仅system类型填写，其他类型留空）"}`
           },
           {
             role: 'user',
@@ -2154,11 +2179,20 @@ async function detectIntentWithAI(userMessage) {
       const validTypes = ['oa_process', 'system', 'page_analysis', 'general_chat'];
       const type = validTypes.includes(result.type) ? result.type : 'general_chat';
 
+      // 解析AI选择的知识库（仅system类型），失败则回退默认工作流
+      const workflow = (type === 'system' && result.workflow)
+        ? resolveWorkflowByName(result.workflow)
+        : null;
+      if (type === 'system' && result.workflow) {
+        console.log('[AI意图识别] 🎯 AI选择的知识库:', result.workflow, '→ 解析为:', workflow ? workflow.name : '未匹配，回退默认');
+      }
+
       return {
         type: type,
         confidence: 0.92,
         reason: result.reason || `AI判定为${getTypeLabel(type)}`,
         systemType: result.systemType || null,
+        workflow: workflow,
         aiDetected: true
       };
     } catch (parseError) {
@@ -2660,35 +2694,62 @@ async function processMessageWithFastGPT(userMessage, contextContent, preDetecte
       console.log('[四路路由] 📋 路由到【OA流程查询】 → 自动调用OA接口');
       return await handleOAProcessQuery(userMessage);
 
-    // ====== 路由1：系统问题 → FastGPT知识库 ======
+    // ====== 路由1：系统问题 → FastGPT知识库（多工作流智能分流） ======
     case 'system':
       console.log(`[四路路由] 📋 路由到【系统问题】${intent.systemType ? '(' + intent.systemType + ')' : ''} → FastGPT工作流`);
-      setStatus('正在查询leaprag知识库...', 'loading');
 
-      const fastgptResult = await callFastGPT(userMessage, onStreamChunk);
+      // 智能分流：优先用AI选择的知识库，否则用默认工作流
+      const primaryWf = intent.workflow || getDefaultWorkflow();
+      const primaryWfName = primaryWf ? primaryWf.name : '知识库';
+      console.log(`[四路路由] 🎯 分流到知识库: ${primaryWfName}`);
+      setStatus(`正在查询「${primaryWfName}」...`, 'loading');
 
-      if (fastgptResult.success && fastgptResult.answer) {
-        // 知识库有答案，返回并标注来源
+      const fastgptResult = await callFastGPT(userMessage, onStreamChunk, primaryWf);
+
+      // 主知识库命中 → 直接返回
+      if (fastgptResult.success && fastgptResult.answer && !isKbMissAnswer(fastgptResult.answer)) {
         return {
           text: fastgptResult.answer,
           source: 'fastgpt_knowledge_base',
-          sources: fastgptResult.sources.length > 0 ? fastgptResult.sources : [{ title: 'leaprag知识库' }],
+          sources: fastgptResult.sources.length > 0 ? fastgptResult.sources : [{ title: primaryWfName }],
           usedFastGPT: true,
-          routeType: 'system'
-        };
-      } else {
-        // 知识库查询失败，回退到主模型（不插入额外消息避免重复）
-        console.warn('[四路路由] ⚠️ 知识库查询失败，回退到主AI模型:', fastgptResult.error);
-
-        // 回退时作为通用问答处理（不传页面内容）
-        const fallbackResult = await callMainModel(userMessage, null, onStreamChunk);
-        return {
-          text: fallbackResult || '（AI未返回有效内容）',
-          source: 'ai_model_fallback',
-          usedFastGPT: false,
-          routeType: 'general_chat'
+          routeType: 'system',
+          workflow: primaryWfName
         };
       }
+
+      // 主知识库未命中 → 依次尝试其余工作流（多知识库同时可用）
+      console.warn(`[四路路由] ⚠️ 知识库「${primaryWfName}」未命中:`, fastgptResult.error || '返回空或未找到答案');
+      const otherWorkflows = primaryWf ? getAllWorkflows().filter(w => w.id !== primaryWf.id) : getAllWorkflows();
+      for (const altWf of otherWorkflows) {
+        addThinkingStep('fetch', `「${primaryWfName}」未找到答案，正在尝试「${altWf.name}」...`);
+        setStatus(`正在查询「${altWf.name}」...`, 'loading');
+        const altResult = await callFastGPT(userMessage, onStreamChunk, altWf);
+        if (altResult.success && altResult.answer && !isKbMissAnswer(altResult.answer)) {
+          return {
+            text: altResult.answer,
+            source: 'fastgpt_knowledge_base',
+            sources: altResult.sources.length > 0 ? altResult.sources : [{ title: altWf.name }],
+            usedFastGPT: true,
+            routeType: 'system',
+            workflow: altWf.name
+          };
+        }
+        console.warn(`[四路路由] ⚠️ 知识库「${altWf.name}」也未命中:`, altResult.error || '返回空或未找到答案');
+      }
+
+      // 所有知识库均未命中 → 回退到主模型（不插入额外消息避免重复）
+      console.warn('[四路路由] ⚠️ 全部知识库未命中，回退到主AI模型');
+      addThinkingStep('fetch', '知识库均未找到答案，正在使用主AI模型回答...');
+
+      // 回退时作为通用问答处理（不传页面内容）
+      const fallbackResult = await callMainModel(userMessage, null, onStreamChunk);
+      return {
+        text: fallbackResult || '（AI未返回有效内容）',
+        source: 'ai_model_fallback',
+        usedFastGPT: false,
+        routeType: 'general_chat'
+      };
 
     // ====== 路由2：页面分析 → 主AI + 页面内容 ======
     case 'page_analysis':
@@ -3249,8 +3310,11 @@ async function sendMessage() {
       addThinkingStep('fetch', '正在调用OA流程接口获取可发起的审批流程...');
       updateThinkingTitle('💭 正在查询OA流程...');
     } else if (finalIntent.type === 'system') {
-      addThinkingStep('fetch', '正在连接leaprag-工作流...');
-      updateThinkingTitle('💭 正在查询leaprag知识库...');
+      const wf = finalIntent.workflow || getDefaultWorkflow();
+      const wfName = wf ? wf.name : 'leaprag';
+      addThinkingStep('route', `已选择知识库: <strong>${wfName}</strong>`);
+      addThinkingStep('fetch', `正在查询「${wfName}」知识库...`);
+      updateThinkingTitle(`💭 正在查询「${wfName}」知识库...`);
     } else if (finalIntent.type === 'page_analysis') {
       addThinkingStep('fetch', contextContent ? '正在分析页面内容...' : '等待页面内容...');
       updateThinkingTitle('💭 正在分析页面...');
@@ -3287,9 +3351,12 @@ async function sendMessage() {
 
     // 步骤3/4：显示实际使用的路由和API调用信息
     const actualRouteInfo = getRouteDisplayInfo(fastgptResult.routeType || finalIntent.type);
+    const sourceLabel = fastgptResult.workflow
+      ? `回答来自知识库: <strong>${fastgptResult.workflow}</strong>`
+      : (fastgptResult.source ? `数据来源: ${fastgptResult.source}` : '');
     addThinkingStep('ai',
       `使用 <strong>${actualRouteInfo.name}</strong> 模式处理` +
-      (fastgptResult.source ? `<br/>数据来源: ${fastgptResult.source}` : '')
+      (sourceLabel ? `<br/>${sourceLabel}` : '')
     );
 
     // 完成思考过程（打勾）
@@ -3322,7 +3389,7 @@ async function sendMessage() {
         } else if (fastgptResult.routeType === 'oa_process') {
           appendSourceTag(msgContent, [{ title: 'OA流程数据库' }]);
         } else if (fastgptResult.usedFastGPT) {
-          appendSourceTag(msgContent, [{ title: 'leaprag知识库' }]);
+          appendSourceTag(msgContent, [{ title: fastgptResult.workflow ? fastgptResult.workflow + '知识库' : 'leaprag知识库' }]);
         }
       }
     } else {
@@ -7456,6 +7523,11 @@ function renderChangelog(releaseInfo) {
   if (isPlaceholder) {
     // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
     const highlights = {
+      '1.19.0': [
+        '多知识库智能分流：每个系统问题自动匹配最合适的知识库（协同办公/系统操作知识库）',
+        '知识库未命中自动切换：一个知识库查不到答案时，自动尝试其余知识库兜底',
+        '思考过程与来源标签展示实际命中的知识库，路由路径更透明'
+      ],
       '1.18.0': [
         '新增内置「系统操作知识库」工作流，系统操作类问题可直接查询',
         '支持多知识库平台：不同工作流可配置独立 API 域名',
