@@ -1696,6 +1696,11 @@ function removeTypingIndicator() {
   if (typing) typing.remove();
 }
 
+// HTML属性转义（用于img等标签的属性值）
+function escapeHtmlAttr(text) {
+  return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function renderMarkdown(text) {
   // 防御性检查：确保输入有效
   if (!text || typeof text !== 'string') {
@@ -1707,6 +1712,14 @@ function renderMarkdown(text) {
 
   // 安全的替换操作
   try {
+    // 图片语法（最先处理，避免被其他规则破坏）：![alt](url)
+    // 兼容换行写法：]( 与 url 之间、url 内部（长链接被流式输出折行）均可能含换行
+    html = html.replace(/!\[([^\]]*)\]\s*\(\s*([\s\S]*?)\s*\)/g, (m, alt, rawUrl) => {
+      const url = rawUrl.replace(/\s+/g, ''); // URL内不允许空白，直接去除折行
+      if (!/^https?:\/\//i.test(url)) return m; // 非http链接保持原样
+      // 统一用 data-src 占位，由 enhanceSecureImages 决定直接加载还是带鉴权头拉取
+      return `<img class="kb-img" data-src="${escapeHtmlAttr(url)}" alt="${escapeHtmlAttr(alt || '知识库图片')}" loading="lazy" />`;
+    });
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -1723,6 +1736,119 @@ function renderMarkdown(text) {
   }
 
   return html;
+}
+
+// ========== 知识库图片（带鉴权）展示 ==========
+const _kbImgBlobCache = new Map(); // url -> objectURL 会话级缓存
+
+// 根据图片URL匹配所属工作流的API Key（leaprag文件下载接口需要鉴权）
+function getApiKeyForImageUrl(url) {
+  const wf = getAllWorkflows().find(w => w.apiUrl && url.startsWith(w.apiUrl));
+  return wf ? wf.apiKey : null;
+}
+
+// 加载单张知识库图片：优先带鉴权头fetch→blob，失败再退回浏览器直连
+async function loadSecureImage(imgEl) {
+  const url = imgEl.dataset.src;
+  if (!url || imgEl.dataset.loaded) return;
+  imgEl.dataset.loaded = '1';
+  imgEl.classList.add('kb-img-loading');
+
+  const failFallback = () => {
+    if (imgEl._done) return;
+    imgEl._done = true;
+    // 最终失败：替换为可点击的原始链接
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.className = 'kb-img-fallback-link';
+    a.textContent = '🖼️ 图片加载失败，点击新窗口查看';
+    imgEl.replaceWith(a);
+  };
+
+  const markReady = () => {
+    if (imgEl._done) return;
+    imgEl._done = true;
+    imgEl.classList.remove('kb-img-loading');
+    imgEl.classList.add('kb-img-ready');
+  };
+
+  imgEl.addEventListener('error', failFallback, { once: true });
+
+  const apiKey = getApiKeyForImageUrl(url);
+  if (apiKey) {
+    try {
+      let objectUrl = _kbImgBlobCache.get(url);
+      if (!objectUrl) {
+        const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        if (!resp.ok) throw new Error('鉴权下载失败 HTTP ' + resp.status);
+        const blob = await resp.blob();
+        objectUrl = URL.createObjectURL(blob);
+        _kbImgBlobCache.set(url, objectUrl);
+      }
+      imgEl.src = objectUrl;
+      await imgEl.decode();
+      markReady();
+      return;
+    } catch (e) {
+      console.warn('[知识库图片] 鉴权拉取失败，尝试浏览器直连:', url, e.message);
+    }
+  }
+
+  // 无鉴权工作流匹配 或 鉴权拉取失败 → 直接交给浏览器加载
+  imgEl.addEventListener('load', markReady, { once: true });
+  imgEl.src = url;
+}
+
+// 扫描容器内所有待加载的知识库图片
+function enhanceSecureImages(scope) {
+  const root = scope || document;
+  root.querySelectorAll('img.kb-img[data-src]:not([data-loaded])').forEach(loadSecureImage);
+}
+
+// 全局监听聊天容器：任何新插入的知识库图片自动鉴权加载、点击看大图
+function initSecureImageObserver() {
+  const container = document.getElementById('chatContainer');
+  if (!container) return;
+
+  const observer = new MutationObserver(mutations => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches('img.kb-img')) {
+          loadSecureImage(node);
+        } else if (node.querySelectorAll) {
+          enhanceSecureImages(node);
+        }
+      }
+    }
+  });
+  observer.observe(container, { childList: true, subtree: true });
+
+  // 事件委托：点击图片打开灯箱
+  container.addEventListener('click', (e) => {
+    const img = e.target.closest && e.target.closest('img.kb-img-ready, img.kb-img[src^="blob:"]');
+    if (img && img.src) openImageLightbox(img.src, img.alt);
+  });
+}
+
+// 图片灯箱（点击任意处关闭）
+function openImageLightbox(src, alt) {
+  const existing = document.getElementById('kbImgLightbox');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'kbImgLightbox';
+  overlay.className = 'kb-img-lightbox';
+  overlay.innerHTML = `
+    <div class="kb-img-lightbox-close" title="关闭">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </div>
+    <img class="kb-img-lightbox-img" src="${escapeHtmlAttr(src)}" alt="${escapeHtmlAttr(alt || '')}" />
+  `;
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
 }
 
 // ========== FastGPT 知识库/工作流集成 ==========
@@ -5948,6 +6074,7 @@ function init() {
   initSettingsTabs();  // 初始化设置面板Tab切换
   initOAProcessFeature();  // 初始化OA流程查询功能
   initQuickAccessPanel();  // 初始化应用快捷入口弹出面板
+  initSecureImageObserver();  // 知识库图片鉴权加载与灯箱
   try {
     initAutoUpdateSystem();  // 初始化在线自动更新系统（失败不影响其他功能初始化）
   } catch (e) {
@@ -7514,6 +7641,11 @@ function renderChangelog(releaseInfo) {
   if (isPlaceholder) {
     // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
     const highlights = {
+      '1.20.1': [
+        '修复知识库回答中的图片只能显示链接的问题，现在可直接展示图片',
+        '图片自动携带知识库鉴权信息加载，支持点击查看大图',
+        '兼容图片链接被换行拆分的场景'
+      ],
       '1.20.0': [
         '「系统操作知识库」设为默认工作流，系统问题直达该知识库',
         '移除「协同办公」内置工作流，精简工作流列表',
