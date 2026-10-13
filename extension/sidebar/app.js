@@ -15,31 +15,22 @@ let currentTabUrl = '';
 let currentTabTitle = '';
 let currentPageExcluded = false;
 let selectedTabIds = new Set();
-// leaprag 配置 - 预配置协同办公工作流，用户可自定义添加
+// leaprag 配置 - 预配置系统操作知识库工作流，用户可自定义添加
 const FASTGPT_CONFIG = {
   enabled: true, // 默认启用智能路由
-  apiUrl: 'https://aiflow.leapmotor.com/api',
+  apiUrl: 'https://leaprag.leapmotor.com/api',
   modelName: ''
 };
 
-// 内置工作流（协同办公、系统操作知识库）
+// 内置工作流（系统操作知识库）
 const BUILTIN_WORKFLOWS = [
-  {
-    id: 'wf_builtin_coop',
-    name: '协同办公',
-    appId: '6a4b7073b415c3419d9fb95d',
-    apiKey: 'openapi-kQTdGDDkdnMvTNlR1aJYuMpoTwV9HQ9ckYU6LeVT6WsCODCphW4rRmUsU0wzTs',
-    apiUrl: 'https://aiflow.leapmotor.com/api',
-    isDefault: true,
-    builtIn: true
-  },
   {
     id: 'wf_builtin_syskb',
     name: '系统操作知识库',
     appId: '6acca66f0da566eb093ed877',
     apiKey: 'openapi-g8RzFaaBW8iXIImkm8QgBrpIIrdEfyqnA7pdZf5iRpJ7Ga7w0CzpdkDAGlaSCqsGL',
     apiUrl: 'https://leaprag.leapmotor.com/api',
-    isDefault: false,
+    isDefault: true,
     builtIn: true
   }
 ];
@@ -2135,7 +2126,7 @@ async function detectIntentWithAI(userMessage) {
 ## 知识库选择（仅当type为system时需要）：
 结合问题内容，从以下知识库中选择最匹配的一个，将其名称原样输出到 workflow 字段：
 ${getAllWorkflows().map(w => `- ${w.name}`).join('\n')}
-判断依据：根据知识库名称推断其覆盖范围（如OA/审批/制度/流程咨询类 → 协同办公；系统功能/操作指引/软件使用类 → 系统操作知识库）。无法判断时选择第一个。
+判断依据：根据知识库名称推断其覆盖范围，选出与问题主题最匹配的知识库（如系统功能/操作指引/软件使用类 → 系统操作知识库）。无法判断时选择第一个。
 
 ## 重要判断规则：
 1. 区分"发起流程"(oa_process) vs "流程有问题"(system)：用户要"走流程/申请"→oa_process；用户在"问问题/报错/求助"→system
@@ -5516,7 +5507,7 @@ function removeWorkflow(id) {
   customWorkflows = customWorkflows.filter(w => w.id !== id);
   saveCustomWorkflows();
 
-  // 如果删除的是默认工作流，把默认还给协同办公
+  // 如果删除的是默认工作流，把默认还给第一个内置工作流
   const all = getAllWorkflows();
   if (!all.some(w => w.isDefault)) {
     BUILTIN_WORKFLOWS[0].isDefault = true;
@@ -7523,6 +7514,11 @@ function renderChangelog(releaseInfo) {
   if (isPlaceholder) {
     // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
     const highlights = {
+      '1.20.0': [
+        '「系统操作知识库」设为默认工作流，系统问题直达该知识库',
+        '移除「协同办公」内置工作流，精简工作流列表',
+        '全局知识库域名统一切换至 leaprag 平台'
+      ],
       '1.19.0': [
         '多知识库智能分流：每个系统问题自动匹配最合适的知识库（协同办公/系统操作知识库）',
         '知识库未命中自动切换：一个知识库查不到答案时，自动尝试其余知识库兜底',
