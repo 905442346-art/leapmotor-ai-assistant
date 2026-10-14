@@ -1720,6 +1720,13 @@ function renderMarkdown(text) {
       // 统一用 data-src 占位，由 enhanceSecureImages 决定直接加载还是带鉴权头拉取
       return `<img class="kb-img" data-src="${escapeHtmlAttr(url)}" alt="${escapeHtmlAttr(alt || '知识库图片')}" loading="lazy" />`;
     });
+    // 兼容正文中原生 <img src="..."> 标签（部分工作流直接输出HTML，src直连会401）
+    html = html.replace(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi, (m, rawUrl) => {
+      const url = rawUrl.replace(/\s+/g, '');
+      if (!/^https?:\/\//i.test(url)) return m;
+      const altMatch = m.match(/\balt\s*=\s*["']([^"']*)["']/i);
+      return `<img class="kb-img" data-src="${escapeHtmlAttr(url)}" alt="${escapeHtmlAttr((altMatch && altMatch[1]) || '知识库图片')}" loading="lazy" />`;
+    });
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -1776,29 +1783,64 @@ async function loadSecureImage(imgEl) {
 
   imgEl.addEventListener('error', failFallback, { once: true });
 
+  const applySrc = (srcVal, label) => new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.warn(`[知识库图片] ${label} 加载超时(15s):`, url);
+      resolve(false);
+    }, 15000);
+    imgEl.addEventListener('load', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      markReady();
+      console.log(`[知识库图片] ✅ ${label} 展示成功:`, url);
+      resolve(true);
+    }, { once: true });
+    imgEl.addEventListener('error', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(false);
+    }, { once: true });
+    imgEl.src = srcVal;
+  });
+
   const apiKey = getApiKeyForImageUrl(url);
   if (apiKey) {
     try {
       let objectUrl = _kbImgBlobCache.get(url);
       if (!objectUrl) {
-        const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        const ctrl = new AbortController();
+        const fetchTimer = setTimeout(() => ctrl.abort(), 15000);
+        const resp = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          signal: ctrl.signal
+        });
+        clearTimeout(fetchTimer);
         if (!resp.ok) throw new Error('鉴权下载失败 HTTP ' + resp.status);
         const blob = await resp.blob();
+        // 服务端可能返回JSON错误（HTTP 200但非图片）
+        if (blob.type && !blob.type.startsWith('image/') && blob.size < 2000) {
+          const peek = await blob.text().catch(() => '');
+          throw new Error('返回内容不是图片: ' + (blob.type || 'unknown') + ' ' + peek.substring(0, 120));
+        }
         objectUrl = URL.createObjectURL(blob);
         _kbImgBlobCache.set(url, objectUrl);
       }
-      imgEl.src = objectUrl;
-      await imgEl.decode();
-      markReady();
-      return;
+      const ok = await applySrc(objectUrl, '鉴权blob');
+      if (ok) return;
+      console.warn('[知识库图片] 鉴权blob渲染失败，尝试浏览器直连:', url);
     } catch (e) {
       console.warn('[知识库图片] 鉴权拉取失败，尝试浏览器直连:', url, e.message);
     }
   }
 
   // 无鉴权工作流匹配 或 鉴权拉取失败 → 直接交给浏览器加载
-  imgEl.addEventListener('load', markReady, { once: true });
-  imgEl.src = url;
+  const directOk = await applySrc(url, '浏览器直连');
+  if (!directOk) failFallback();
 }
 
 // 扫描容器内所有待加载的知识库图片
@@ -2080,6 +2122,26 @@ async function callFastGPT(question, onStreamChunk, workflow) {
     let result = '';
     let hasContent = false;
     let sources = [];
+    const collectedImages = new Set(); // SSE独立字段中的图片（部分工作流不放在正文markdown里）
+
+    // 从任意SSE chunk中提取图片URL（兼容FastGPT多种字段形态）
+    const collectImages = (data) => {
+      const candidates = [
+        data?.choices?.[0]?.delta?.images,
+        data?.choices?.[0]?.message?.images,
+        data?.choices?.[0]?.message?.metadata?.images,
+        data?.images,
+        data?.metadata?.images
+      ];
+      candidates.forEach(arr => {
+        if (Array.isArray(arr)) {
+          arr.forEach(item => {
+            const u = typeof item === 'string' ? item : (item?.url || item?.src || item?.path || '');
+            if (u) collectedImages.add(u);
+          });
+        }
+      });
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -2105,6 +2167,7 @@ async function callFastGPT(question, onStreamChunk, workflow) {
               } else if (data?.metadata?.sources) {
                 sources = data.metadata.sources;
               }
+              collectImages(data);
             } catch (parseError) {
               console.warn('[FastGPT流式] 解析失败:', parseError.message);
             }
@@ -2117,11 +2180,52 @@ async function callFastGPT(question, onStreamChunk, workflow) {
 
     console.log('[FastGPT] ✅ 流式完成，内容长度:', result.length);
 
+    // 图片URL规范化：相对路径 → 绝对路径（基于工作流API域名）
+    const normalizeImgUrl = (u) => {
+      if (!u || typeof u !== 'string') return '';
+      if (/^https?:\/\//i.test(u)) return u;
+      try { return new URL(u.replace(/^\.\//, ''), apiUrl + '/').href; } catch { return ''; }
+    };
+
+    // 正文markdown中已有的图片，避免与独立字段重复追加
+    const inlineImgUrls = new Set();
+    let m;
+    const imgMdRe = /!\[[^\]]*\]\s*\(\s*([\s\S]*?)\s*\)/g;
+    while ((m = imgMdRe.exec(result)) !== null) {
+      inlineImgUrls.add(m[1].replace(/\s+/g, ''));
+    }
+
+    const extraImages = [...collectedImages]
+      .map(normalizeImgUrl)
+      .filter(Boolean)
+      .filter(u => !inlineImgUrls.has(u));
+
+    let finalAnswer = result.trim();
+    if (extraImages.length > 0) {
+      finalAnswer = `${finalAnswer}\n\n${extraImages.map(u => `![](${u})`).join('\n\n')}`;
+      console.log('[FastGPT] 🖼️ SSE独立图片字段追加:', extraImages);
+    }
+
+    // 诊断日志：定位"图片不显示"问题（原始图片标记数量、独立字段数量）
+    console.log('[FastGPT] 🖼️ 图片诊断:', {
+      markdownImages: inlineImgUrls.size,
+      inlineUrls: [...inlineImgUrls],
+      sseImageField: collectedImages.size,
+      extraAppended: extraImages.length,
+      rawHasBangBracket: result.includes('!['),
+      rawHasHtmlImg: /<img/i.test(result),
+      rawHasDownloadUrl: /\/file\/(download|get|read)/i.test(result),
+      rawTail: result.slice(-200)
+    });
+
     if (!hasContent || !result || result.trim() === '') {
+      if (extraImages.length > 0) {
+        return { answer: extraImages.map(u => `![](${u})`).join('\n\n'), sources, success: true };
+      }
       return { answer: '', sources: [], success: false, error: 'leaprag-工作流未返回有效内容' };
     }
 
-    return { answer: result.trim(), sources, success: true };
+    return { answer: finalAnswer, sources, success: true };
 
   } catch (error) {
     // 详细错误分类
@@ -3492,6 +3596,10 @@ async function sendMessage() {
         // markdown 内容 - 重新渲染（带淡入效果）
         bubble.style.opacity = '0';
         bubble.innerHTML = renderMarkdown(aiText);
+        const renderedImgs = bubble.querySelectorAll('img.kb-img').length;
+        if (renderedImgs > 0 || aiText.includes('![') || /<img/i.test(aiText)) {
+          console.log('[渲染] 🖼️ 最终气泡中待加载图片数:', renderedImgs, '| 原文含图片标记:', aiText.includes('!['));
+        }
         bubble.style.transition = 'opacity 0.3s ease';
         requestAnimationFrame(() => { bubble.style.opacity = '1'; });
         // 挂载悬停复制按钮（复制 markdown 原文）
@@ -7641,6 +7749,11 @@ function renderChangelog(releaseInfo) {
   if (isPlaceholder) {
     // 内置版本亮点（按主要版本给出简要说明，最新版放最上）
     const highlights = {
+      '1.20.2': [
+        '修复部分情况下图片已加载但不显示的问题（渲染状态异常）',
+        '兼容相对路径图片地址与工作流独立图片字段',
+        '增强图片加载容错：15秒超时、非图片响应识别、失败兜底链接'
+      ],
       '1.20.1': [
         '修复知识库回答中的图片只能显示链接的问题，现在可直接展示图片',
         '图片自动携带知识库鉴权信息加载，支持点击查看大图',
